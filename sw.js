@@ -1,0 +1,1 @@
+// Service Worker genérico removido em favor do OneSignalSDKWorker.js
