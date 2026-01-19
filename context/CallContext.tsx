@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
-import { auth, db, doc, addDoc, collection, onSnapshot, updateDoc, getDoc, serverTimestamp, query, where, limit } from '../firebase';
+import { auth, db, doc, addDoc, collection, onSnapshot, updateDoc, getDoc, serverTimestamp, query, where, limit, setDoc } from '../firebase';
 
 const servers = {
   iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }],
@@ -38,11 +38,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isAudioEnabled, setIsAudioEnabled] = useState(true);
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
     const [callTimeoutReached, setCallTimeoutReached] = useState(false);
-    const [callStartTime, setCallStartTime] = useState<number | null>(null);
     
     const pc = useRef<RTCPeerConnection | null>(null);
     const signalingUnsub = useRef<(() => void) | null>(null);
-    const candidatesUnsub = useRef<(() => void) | null>(null);
     const timeoutRef = useRef<number | null>(null);
 
     const stopStream = (stream: MediaStream | null) => {
@@ -55,6 +53,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const resetCallState = useCallback(() => {
+        console.log("CallContext: Resetting call state...");
         if (pc.current) {
             pc.current.close();
             pc.current = null;
@@ -62,10 +61,6 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (signalingUnsub.current) {
             signalingUnsub.current();
             signalingUnsub.current = null;
-        }
-        if (candidatesUnsub.current) {
-            candidatesUnsub.current();
-            candidatesUnsub.current = null;
         }
         if (timeoutRef.current) {
             window.clearTimeout(timeoutRef.current);
@@ -80,10 +75,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsVideoEnabled(true);
         setIsAudioEnabled(true);
         setCallTimeoutReached(false);
-        setCallStartTime(null);
     }, [localStream]);
 
-    // Listener Global para Chamadas Recebidas
+    // Listener Global for Incoming Calls
     useEffect(() => {
         const currentUser = auth.currentUser;
         if (!currentUser) return;
@@ -112,30 +106,46 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return () => unsub();
     }, [activeCall]);
 
-    // Lógica de monitoramento do status da chamada atual
+    // Internal Signaling for Peer Connection
     useEffect(() => {
-        if (!activeCall?.callId) return;
+        if (!activeCall?.callId || activeCall.status === 'ringing-incoming') return;
 
         const callRef = doc(db, 'calls', activeCall.callId);
         const unsubscribe = onSnapshot(callRef, async (snapshot) => {
             const data = snapshot.data();
             if (!data) return;
 
+            // Handle Rejection or End
             if (data.status === 'ended' || data.status === 'declined') {
                 resetCallState();
                 return;
             }
 
-            if (data.status === 'connected' && activeCall.status === 'ringing-outgoing' && data.answer && pc.current && !pc.current.currentRemoteDescription) {
-                if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-                await pc.current.setRemoteDescription(new RTCSessionDescription(data.answer));
-                setActiveCall(prev => prev ? { ...prev, status: 'connected' } : null);
-                setCallStartTime(Date.now());
+            // Caller side: Wait for answer
+            if (activeCall.status === 'ringing-outgoing' && data.status === 'connected' && data.answer && pc.current) {
+                if (!pc.current.currentRemoteDescription) {
+                    await pc.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+                    setActiveCall(prev => prev ? { ...prev, status: 'connected' } : null);
+                }
             }
         });
 
-        signalingUnsub.current = unsubscribe;
-        return () => unsubscribe();
+        // ICE Candidates Listeners
+        const callerCandidatesRef = collection(db, 'calls', activeCall.callId, 'callerCandidates');
+        const receiverCandidatesRef = collection(db, 'calls', activeCall.callId, 'receiverCandidates');
+
+        const unsubCandidates = onSnapshot(activeCall.status === 'ringing-outgoing' ? receiverCandidatesRef : callerCandidatesRef, (snap) => {
+            snap.docChanges().forEach((change) => {
+                if (change.type === 'added' && pc.current && pc.current.remoteDescription) {
+                    pc.current.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+                }
+            });
+        });
+
+        return () => {
+            unsubscribe();
+            unsubCandidates();
+        };
     }, [activeCall?.callId, activeCall?.status, resetCallState]);
 
     const startCall = async (receiver: UserInfo, isVideo: boolean = false) => {
@@ -157,8 +167,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             const callDocRef = await addDoc(collection(db, 'calls'), {
                 callerId: currentUser.uid,
-                callerUsername: currentUser.displayName,
-                callerAvatar: currentUser.photoURL,
+                callerUsername: currentUser.displayName || 'User',
+                callerAvatar: currentUser.photoURL || '',
                 receiverId: receiver.id,
                 receiverUsername: receiver.username,
                 receiverAvatar: receiver.avatar,
@@ -183,14 +193,13 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 isVideo
             });
 
-            // Timeout de 30 segundos se ninguém atender
             timeoutRef.current = window.setTimeout(async () => {
                 await updateDoc(callDocRef, { status: 'ended' });
                 setCallTimeoutReached(true);
-            }, 30000);
+            }, 45000);
 
         } catch (err) {
-            console.error(err);
+            console.error("Failed to start call:", err);
             resetCallState();
         }
     };
@@ -198,6 +207,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const answerCall = async () => {
         if (!activeCall) return;
         try {
+            if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
             const callRef = doc(db, 'calls', activeCall.callId);
             const callSnap = await getDoc(callRef);
             const data = callSnap.data();
@@ -217,16 +227,6 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (e.candidate) addDoc(collection(db, 'calls', activeCall.callId, 'receiverCandidates'), e.candidate.toJSON());
             };
 
-            // Escutar candidatos do outro lado
-            const candidatesRef = collection(db, 'calls', activeCall.callId, 'callerCandidates');
-            onSnapshot(candidatesRef, (snap) => {
-                snap.docChanges().forEach((change) => {
-                    if (change.type === 'added' && pc.current?.remoteDescription) {
-                        pc.current.addIceCandidate(new RTCIceCandidate(change.doc.data()));
-                    }
-                });
-            });
-
             await pc.current.setRemoteDescription(new RTCSessionDescription(data.offer));
             const answer = await pc.current.createAnswer();
             await pc.current.setLocalDescription(answer);
@@ -237,9 +237,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
 
             setActiveCall(prev => prev ? { ...prev, status: 'connected' } : null);
-            setCallStartTime(Date.now());
         } catch (err) {
-            console.error(err);
+            console.error("Failed to answer call:", err);
             resetCallState();
         }
     };
@@ -278,9 +277,23 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!videoTrack) return;
         const newMode = facingMode === 'user' ? 'environment' : 'user';
         try {
-            await videoTrack.applyConstraints({ facingMode: newMode });
+            // We stop the existing track and add a new one for clean switch
+            const newStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: newMode }
+            });
+            const newTrack = newStream.getVideoTracks()[0];
+            
+            if (pc.current) {
+                const sender = pc.current.getSenders().find(s => s.track?.kind === 'video');
+                if (sender) sender.replaceTrack(newTrack);
+            }
+            
+            videoTrack.stop();
+            localStream.removeTrack(videoTrack);
+            localStream.addTrack(newTrack);
+            
             setFacingMode(newMode);
-        } catch (e) { console.warn(e); }
+        } catch (e) { console.warn("Switch camera error", e); }
     };
 
     return (
