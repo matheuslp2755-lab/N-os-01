@@ -42,39 +42,20 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
     const [flashMode, setFlashMode] = useState<'off' | 'on'>('off');
     const [showFlashAnim, setShowFlashAnim] = useState(false);
+    const [cameraError, setCameraError] = useState<string | null>(null);
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
-    const requestRef = useRef<number>(null);
+    const requestRef = useRef<number | null>(null);
 
     const getZoomFactor = (mm: LensMM) => {
         const factors = { 24: 1.0, 35: 1.4, 50: 2.0, 85: 2.8, 101: 3.5 };
         return factors[mm];
     };
 
-    const startCamera = useCallback(async () => {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(t => t.stop());
-        }
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
-                audio: false
-            });
-            streamRef.current = stream;
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                videoRef.current.play();
-                requestRef.current = requestAnimationFrame(renderLoop);
-            }
-        } catch (err) {
-            console.error("Camera Error:", err);
-        }
-    }, [facingMode]);
-
     const applyAestheticPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
-        // 1. Base Grading (Filtros existentes aplicados no preview)
+        // 1. Base Grading
         ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${config.temp}deg) blur(${config.blur}px)`;
         
         const tempCanvas = document.createElement('canvas');
@@ -91,12 +72,12 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.save();
             ctx.globalAlpha = config.glow * 0.5;
             ctx.globalCompositeOperation = 'screen';
-            ctx.filter = `blur(${20 * config.glow}px) brightness(1.3)`;
+            ctx.filter = `blur(${Math.max(1, 20 * config.glow)}px) brightness(1.3)`;
             ctx.drawImage(ctx.canvas, 0, 0);
             ctx.restore();
         }
 
-        // 3. Grain (Digital Noise)
+        // 3. Grain
         if (config.grain > 0) {
             ctx.save();
             ctx.globalAlpha = config.grain * 0.35;
@@ -115,26 +96,22 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         ctx.fillRect(0, 0, w, h);
         ctx.restore();
 
-        // 5. Final Identity (Watermark + Date) - Responsivo por %
+        // 5. Final Identity
         if (isFinal) {
             const now = new Date();
             const dateStr = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
-            
-            // Proporções baseadas na altura (h)
-            const fontSizeDate = Math.round(h * 0.04); // 4% da altura
-            const fontSizeWatermark = Math.round(h * 0.03); // 3% da altura
-            const paddingX = Math.round(w * 0.05); // 5% da largura
-            const paddingY = Math.round(h * 0.05); // 5% da altura
+            const fontSizeDate = Math.round(h * 0.04);
+            const fontSizeWatermark = Math.round(h * 0.03);
+            const paddingX = Math.round(w * 0.05);
+            const paddingY = Math.round(h * 0.05);
 
             ctx.save();
-            // Retro Yellow Date
             ctx.font = `bold ${fontSizeDate}px monospace`;
             ctx.fillStyle = '#facc15';
             ctx.shadowColor = 'rgba(0,0,0,0.8)';
             ctx.shadowBlur = Math.round(h * 0.006);
             ctx.fillText(dateStr, paddingX, h - paddingY);
             
-            // Watermark Neos
             ctx.font = `italic ${fontSizeWatermark}px sans-serif`;
             ctx.fillStyle = 'rgba(255,255,255,0.4)';
             ctx.textAlign = 'right';
@@ -150,7 +127,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         ctx.fillRect(0, 0, w, h);
     };
 
-    const renderLoop = () => {
+    const renderLoop = useCallback(() => {
         const video = videoRef.current;
         const canvas = canvasRef.current;
         if (!video || !canvas || video.readyState < 2) {
@@ -160,12 +137,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
         const ctx = canvas.getContext('2d', { alpha: false });
         if (ctx) {
-            const vw = video.videoWidth;
-            const vh = video.videoHeight;
-            canvas.width = vw;
-            canvas.height = vh;
+            if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+            }
 
-            // Desenha a imagem base
+            const vw = canvas.width;
+            const vh = canvas.height;
+
             ctx.save();
             if (facingMode === 'user') {
                 ctx.translate(vw, 0);
@@ -174,31 +153,65 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.drawImage(video, 0, 0, vw, vh);
             ctx.restore();
 
-            // APLICAÇÃO DOS EFEITOS EM TEMPO REAL NO PREVIEW
             applyAestheticPipeline(ctx, vw, vh, PRESETS[activeVibe], false);
         }
         requestRef.current = requestAnimationFrame(renderLoop);
-    };
+    }, [facingMode, activeVibe]);
+
+    const startCamera = useCallback(async () => {
+        setCameraError(null);
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(t => t.stop());
+        }
+        if (requestRef.current) {
+            cancelAnimationFrame(requestRef.current);
+        }
+
+        try {
+            const constraints = {
+                video: { 
+                    facingMode, 
+                    width: { ideal: 1920 }, 
+                    height: { ideal: 1080 } 
+                },
+                audio: false
+            };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            streamRef.current = stream;
+            
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                // Important: await play to ensure stream is active
+                await videoRef.current.play();
+                requestRef.current = requestAnimationFrame(renderLoop);
+            }
+        } catch (err: any) {
+            console.error("Paradise Camera Error:", err);
+            setCameraError(err.message || "Não foi possível acessar a câmera");
+        }
+    }, [facingMode, renderLoop]);
+
+    useEffect(() => {
+        if (isOpen && !viewingGallery) {
+            startCamera();
+        }
+        return () => {
+            if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+            if (requestRef.current) cancelAnimationFrame(requestRef.current);
+        };
+    }, [isOpen, viewingGallery, startCamera]);
 
     const toggleTorch = async (on: boolean) => {
         if (streamRef.current && facingMode === 'environment') {
             const track = streamRef.current.getVideoTracks()[0];
             const capabilities = track.getCapabilities() as any;
-            if (capabilities.torch) {
+            if (capabilities && capabilities.torch) {
                 try {
                     await track.applyConstraints({ advanced: [{ torch: on }] } as any);
                 } catch (e) { console.warn("Torch fail", e); }
             }
         }
     };
-
-    useEffect(() => {
-        if (isOpen && !viewingGallery) startCamera();
-        return () => {
-            if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-            if (requestRef.current) cancelAnimationFrame(requestRef.current);
-        };
-    }, [isOpen, facingMode, viewingGallery, startCamera]);
 
     const executeCapture = async () => {
         const canvas = canvasRef.current;
@@ -210,7 +223,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         setShowFlashAnim(true);
         setTimeout(() => setShowFlashAnim(false), 150);
 
-        // Calculate Real Crop based on Lens
         const zoom = getZoomFactor(lensMM);
         const vw = canvas.width;
         const vh = canvas.height;
@@ -225,9 +237,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const outCtx = outputCanvas.getContext('2d');
         
         if (outCtx) {
-            // Transferrendered content with crop (o canvas já tem o efeito aplicado pelo renderLoop)
             outCtx.drawImage(canvas, cx, cy, cropW, cropH, 0, 0, cropW, cropH);
-            // Apply Final Identity (Marca d'água responsiva aplicada após o recorte)
             applyAestheticPipeline(outCtx, cropW, cropH, PRESETS[activeVibe], true);
         }
 
@@ -242,7 +252,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         <div className="fixed inset-0 z-[600] bg-black flex flex-col overflow-hidden touch-none h-[100dvh] font-sans text-white">
             {showFlashAnim && <div className="fixed inset-0 bg-white z-[1000] animate-flash-out"></div>}
 
-            {/* TOP BAR */}
             <header className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-50 bg-gradient-to-b from-black/40 to-transparent">
                 <button onClick={onClose} className="w-10 h-10 flex items-center justify-center bg-black/20 backdrop-blur-xl rounded-full border border-white/10 active:scale-90 transition-all text-xl font-thin">&times;</button>
                 
@@ -274,7 +283,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 </div>
             </header>
 
-            {/* PREVIEW */}
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden">
                 {viewingGallery ? (
                     <div className="absolute inset-0 z-[200] bg-black flex flex-col animate-fade-in">
@@ -293,10 +301,16 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                     </div>
                 ) : (
                     <>
-                        <video ref={videoRef} className="hidden" />
-                        <canvas ref={canvasRef} className="w-full h-full object-cover" />
+                        <video ref={videoRef} className="hidden" playsInline muted />
+                        {cameraError ? (
+                            <div className="p-10 text-center space-y-4">
+                                <p className="text-red-500 font-bold">{cameraError}</p>
+                                <button onClick={() => startCamera()} className="bg-white text-black px-6 py-2 rounded-full font-black text-xs uppercase tracking-widest">Tentar Novamente</button>
+                            </div>
+                        ) : (
+                            <canvas ref={canvasRef} className="w-full h-full object-cover" />
+                        )}
                         
-                        {/* DYNAMIC FRAME OVERLAY */}
                         <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                             <div 
                                 className="border-[0.5px] border-white/40 transition-all duration-700 ease-out relative rounded-2xl"
@@ -317,7 +331,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 )}
             </div>
 
-            {/* FULL SCREEN VIEWER */}
             {fullScreenImage && (
                 <div className="fixed inset-0 z-[300] bg-black flex flex-col animate-fade-in">
                     <header className="p-6 flex justify-between items-center z-10">
@@ -340,11 +353,9 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 </div>
             )}
 
-            {/* CONTROLS */}
             <footer className="bg-black px-4 pb-12 pt-6 border-t border-white/5 z-50">
                 {!viewingGallery ? (
                     <div className="flex flex-col gap-8">
-                        {/* Effects Swipe */}
                         <div className="flex gap-4 overflow-x-auto no-scrollbar py-1 snap-x snap-mandatory">
                             {(Object.values(PRESETS)).map((eff) => (
                                 <button
@@ -361,7 +372,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                             ))}
                         </div>
 
-                        {/* Capture Trigger */}
                         <div className="flex items-center justify-between px-8">
                             <button 
                                 onClick={() => setViewingGallery(true)}
@@ -376,6 +386,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
                             <button 
                                 onClick={executeCapture} 
+                                disabled={!!cameraError}
                                 className="w-20 h-20 rounded-full border-4 border-white/20 flex items-center justify-center p-1.5 active:scale-95 transition-all shadow-[0_0_40px_rgba(255,255,255,0.05)]"
                             >
                                 <div className="w-full h-full rounded-full bg-white flex items-center justify-center relative">
