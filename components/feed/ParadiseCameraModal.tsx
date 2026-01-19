@@ -6,11 +6,7 @@ interface ParadiseCameraModalProps {
     onClose: () => void;
 }
 
-type VibeEffect = 
-    | 'y2k2000s' | 'asterisk' | 'tumblrclassic' | 'tumblrdark' 
-    | 'vibe' | 'cleanpro' | 'fixlowres' | 'flash2000' 
-    | 'softbeauty' | 'analogfilm';
-
+type VibeEffect = 'neosultra' | 'y2kreal' | 'tumblraesthetic' | 'vibepro' | 'flashparty' | 'analogclean';
 type LensMM = 24 | 35 | 50 | 85 | 101;
 
 interface EffectConfig {
@@ -26,31 +22,26 @@ interface EffectConfig {
     exposure: number;
     sharpness: number;
     skinSoft: number;
-    tint: string;
     vignette: number;
+    fade: number;
 }
 
 const PRESETS: Record<VibeEffect, EffectConfig> = {
-    y2k2000s: { id: 'y2k2000s', name: 'Y2K 2000s', label: 'SONY', grain: 0.4, blur: 0.5, temp: -5, glow: 0.5, saturation: 1.3, contrast: 1.2, exposure: 1.2, sharpness: 0.8, skinSoft: 0.3, tint: 'rgba(200,255,255,0.08)', vignette: 0.3 },
-    asterisk: { id: 'asterisk', name: 'Asterisk', label: 'META', grain: 0.2, blur: 0, temp: -15, glow: 0.7, saturation: 0.8, contrast: 1.4, exposure: 1.1, sharpness: 1.1, skinSoft: 0, tint: 'rgba(100,50,255,0.1)', vignette: 0.5 },
-    tumblrclassic: { id: 'tumblrclassic', name: 'Tumblr Classic', label: '90s', grain: 0.3, blur: 1.2, temp: 10, glow: 0.3, saturation: 0.7, contrast: 0.9, exposure: 1.1, sharpness: 0.6, skinSoft: 0.4, tint: 'rgba(255,200,150,0.15)', vignette: 0.2 },
-    tumblrdark: { id: 'tumblrdark', name: 'Tumblr Dark', label: 'MOOD', grain: 0.5, blur: 0.8, temp: -10, glow: 0.2, saturation: 0.6, contrast: 1.3, exposure: 0.8, sharpness: 0.9, skinSoft: 0, tint: 'rgba(0,0,50,0.1)', vignette: 0.7 },
-    vibe: { id: 'vibe', name: 'VIBE', label: 'LIVE', grain: 0.1, blur: 0, temp: 5, glow: 0.3, saturation: 1.2, contrast: 1.1, exposure: 1.05, sharpness: 1.2, skinSoft: 0.5, tint: 'rgba(255,255,255,0)', vignette: 0.3 },
-    cleanpro: { id: 'cleanpro', name: 'Clean Pro', label: 'RAW', grain: 0, blur: 0, temp: 0, glow: 0, saturation: 1.05, contrast: 1.05, exposure: 1.0, sharpness: 1.4, skinSoft: 0, tint: 'rgba(255,255,255,0)', vignette: 0.1 },
-    fixlowres: { id: 'fixlowres', name: 'Pro-Fix', label: 'HDR', grain: 0, blur: 0, temp: 0, glow: 0.1, saturation: 1.1, contrast: 1.2, exposure: 1.1, sharpness: 1.8, skinSoft: 0.2, tint: 'rgba(255,255,255,0.02)', vignette: 0.2 },
-    flash2000: { id: 'flash2000', name: 'Flash 2000', label: 'PARTY', grain: 0.4, blur: 0.2, temp: 0, glow: 0.6, saturation: 1.4, contrast: 1.6, exposure: 1.4, sharpness: 1.3, skinSoft: 0, tint: 'rgba(255,255,255,0.1)', vignette: 0.6 },
-    softbeauty: { id: 'softbeauty', name: 'Soft Beauty', label: 'GIRL', grain: 0.1, blur: 1.5, temp: 5, glow: 0.6, saturation: 1.1, contrast: 0.9, exposure: 1.15, sharpness: 0.7, skinSoft: 0.9, tint: 'rgba(255,180,200,0.1)', vignette: 0.1 },
-    analogfilm: { id: 'analogfilm', name: 'Analog Film', label: 'KODAK', grain: 0.8, blur: 0.4, temp: 15, glow: 0.3, saturation: 0.9, contrast: 1.1, exposure: 1.0, sharpness: 0.9, skinSoft: 0.2, tint: 'rgba(255,150,0,0.08)', vignette: 0.4 }
+    neosultra: { id: 'neosultra', name: 'Neos Ultra', label: 'ULTRA', grain: 0, blur: 0, temp: 0, glow: 0.1, saturation: 1.05, contrast: 1.1, exposure: 1.05, sharpness: 1.4, skinSoft: 0.1, vignette: 0.1, fade: 0 },
+    y2kreal: { id: 'y2kreal', name: 'Y2K Real', label: '2000s', grain: 0.3, blur: 0.3, temp: 10, glow: 0.4, saturation: 1.25, contrast: 1.2, exposure: 1.15, sharpness: 0.9, skinSoft: 0.2, vignette: 0.3, fade: 0 },
+    tumblraesthetic: { id: 'tumblraesthetic', name: 'Tumblr Aesthetic', label: 'MOOD', grain: 0.2, blur: 0.8, temp: -5, glow: 0.3, saturation: 0.85, contrast: 0.9, exposure: 1.1, sharpness: 0.7, skinSoft: 0.4, vignette: 0.2, fade: 15 },
+    vibepro: { id: 'vibepro', name: 'Vibe Pro', label: 'SOCIAL', grain: 0.1, blur: 0, temp: 2, glow: 0.2, saturation: 1.15, contrast: 1.05, exposure: 1.05, sharpness: 1.2, skinSoft: 0.6, vignette: 0.2, fade: 0 },
+    flashparty: { id: 'flashparty', name: 'Flash Party', label: 'NIGHT', grain: 0.4, blur: 0.1, temp: 0, glow: 0.5, saturation: 1.3, contrast: 1.4, exposure: 1.3, sharpness: 1.5, skinSoft: 0, vignette: 0.6, fade: 0 },
+    analogclean: { id: 'analogclean', name: 'Analog Clean', label: 'FILM', grain: 0.6, blur: 0.4, temp: 15, glow: 0.2, saturation: 1.0, contrast: 1.1, exposure: 1.0, sharpness: 1.0, skinSoft: 0.3, vignette: 0.4, fade: 5 }
 };
 
 const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClose }) => {
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-    const [activeVibe, setActiveVibe] = useState<VibeEffect>('cleanpro');
+    const [activeVibe, setActiveVibe] = useState<VibeEffect>('neosultra');
     const [lensMM, setLensMM] = useState<LensMM>(35);
     const [capturedImages, setCapturedImages] = useState<string[]>([]);
     const [viewingGallery, setViewingGallery] = useState(false);
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
-    const [flashMode, setFlashMode] = useState<'off' | 'on'>('off');
     const [showFlashAnim, setShowFlashAnim] = useState(false);
     const [cameraError, setCameraError] = useState<string | null>(null);
 
@@ -64,98 +55,80 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         return factors[mm];
     };
 
-    const applyAestheticPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
-        // 1. Sharpening & Clarity (Base)
-        if (config.sharpness > 1.0) {
-            // Simulação de nitidez via overlay contrastado leve
-            ctx.save();
-            ctx.globalAlpha = (config.sharpness - 1.0) * 0.3;
-            ctx.globalCompositeOperation = 'overlay';
-            ctx.drawImage(ctx.canvas, 0, 0);
-            ctx.restore();
-        }
-
-        // 2. Base Grading & Blur
-        ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${config.temp}deg) blur(${config.blur}px)`;
+    const applyQualityPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig) => {
+        // 1. BASE QUALITY IMPROVEMENT (Flagship Level)
+        // HDR & Exposure Recovery
+        ctx.globalCompositeOperation = 'overlay';
+        ctx.globalAlpha = 0.15;
+        ctx.drawImage(ctx.canvas, 0, 0);
         
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = w; tempCanvas.height = h;
-        const tempCtx = tempCanvas.getContext('2d');
-        if (tempCtx) {
-            tempCtx.drawImage(ctx.canvas, 0, 0);
-            ctx.filter = 'none';
-            ctx.drawImage(tempCanvas, 0, 0);
-        }
+        // Intelligent Sharpening
+        ctx.globalCompositeOperation = 'hard-light';
+        ctx.globalAlpha = config.sharpness * 0.15;
+        ctx.drawImage(ctx.canvas, 0, 0);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1.0;
 
-        // 3. Skin Softening (Simulado via blur seletivo por opacidade)
+        // 2. SKIN SOFTENING & DENOISE
         if (config.skinSoft > 0) {
-            ctx.save();
-            ctx.globalAlpha = config.skinSoft * 0.4;
-            ctx.filter = 'blur(4px)';
-            ctx.drawImage(ctx.canvas, 0, 0);
-            ctx.restore();
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = w; tempCanvas.height = h;
+            const tCtx = tempCanvas.getContext('2d');
+            if (tCtx) {
+                tCtx.filter = `blur(${Math.round(w * 0.005)}px) brightness(1.05)`;
+                tCtx.drawImage(ctx.canvas, 0, 0);
+                ctx.save();
+                ctx.globalAlpha = config.skinSoft * 0.5;
+                ctx.drawImage(tempCanvas, 0, 0);
+                ctx.restore();
+            }
         }
 
-        // 4. Glow / Bloom
+        // 3. ARTISTIC GRADING
+        ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${config.temp}deg) blur(${config.blur}px)`;
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = w; finalCanvas.height = h;
+        const fCtx = finalCanvas.getContext('2d');
+        if (fCtx) {
+            fCtx.drawImage(ctx.canvas, 0, 0);
+            ctx.filter = 'none';
+            ctx.drawImage(finalCanvas, 0, 0);
+        }
+
+        // 4. PREMIUM EFFECTS (Glow, Fade, Grain)
         if (config.glow > 0) {
             ctx.save();
-            ctx.globalAlpha = config.glow * 0.5;
+            ctx.globalAlpha = config.glow * 0.4;
             ctx.globalCompositeOperation = 'screen';
-            ctx.filter = `blur(${Math.max(1, 20 * config.glow)}px) brightness(1.3)`;
+            ctx.filter = `blur(${Math.round(w * 0.02)}px) brightness(1.2)`;
             ctx.drawImage(ctx.canvas, 0, 0);
             ctx.restore();
         }
 
-        // 5. Grain (Realistic Noise)
+        if (config.fade > 0) {
+            ctx.save();
+            ctx.fillStyle = `rgba(255,255,255,${config.fade / 100})`;
+            ctx.globalCompositeOperation = 'lighten';
+            ctx.fillRect(0, 0, w, h);
+            ctx.restore();
+        }
+
         if (config.grain > 0) {
             ctx.save();
-            ctx.globalAlpha = config.grain * 0.3;
+            ctx.globalAlpha = config.grain * 0.25;
             ctx.globalCompositeOperation = 'overlay';
-            for (let i = 0; i < 400; i++) {
+            for (let i = 0; i < 500; i++) {
                 ctx.fillStyle = Math.random() > 0.5 ? '#fff' : '#000';
                 ctx.fillRect(Math.random() * w, Math.random() * h, 1.2, 1.2);
             }
             ctx.restore();
         }
 
-        // 6. Color Tint
-        if (config.tint !== 'rgba(255,255,255,0)') {
-            ctx.save();
-            ctx.fillStyle = config.tint;
-            ctx.globalAlpha = 1.0;
-            ctx.fillRect(0, 0, w, h);
-            ctx.restore();
-        }
-
-        // 7. Identity (Only on Save)
-        if (isFinal) {
-            const now = new Date();
-            const dateStr = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
-            const fontSizeDate = Math.round(h * 0.035);
-            const paddingX = Math.round(w * 0.06);
-            const paddingY = Math.round(h * 0.06);
-
-            ctx.save();
-            // Vintage Yellow Date
-            ctx.font = `bold ${fontSizeDate}px "Courier New", monospace`;
-            ctx.fillStyle = '#facc15';
-            ctx.shadowColor = 'rgba(0,0,0,0.6)';
-            ctx.shadowBlur = h * 0.005;
-            ctx.fillText(dateStr, paddingX, h - paddingY);
-            
-            // Neos Branding
-            ctx.font = `italic ${fontSizeDate * 0.8}px sans-serif`;
-            ctx.fillStyle = 'rgba(255,255,255,0.4)';
-            ctx.textAlign = 'right';
-            ctx.fillText('Neos', w - paddingX, h - paddingY);
-            ctx.restore();
-        }
-
-        // 8. Vignette
+        // 5. VIGNETTE
         if (config.vignette > 0) {
             const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w*0.9);
             grad.addColorStop(0, 'transparent');
-            grad.addColorStop(1, `rgba(0,0,0,${config.vignette * 0.7})`);
+            grad.addColorStop(1, `rgba(0,0,0,${config.vignette * 0.6})`);
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, w, h);
         }
@@ -187,7 +160,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.drawImage(video, 0, 0, vw, vh);
             ctx.restore();
 
-            applyAestheticPipeline(ctx, vw, vh, PRESETS[activeVibe], false);
+            applyQualityPipeline(ctx, vw, vh, PRESETS[activeVibe]);
         }
         requestRef.current = requestAnimationFrame(renderLoop);
     }, [facingMode, activeVibe]);
@@ -228,7 +201,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         if (!canvas) return;
 
         setShowFlashAnim(true);
-        setTimeout(() => setShowFlashAnim(false), 100);
+        setTimeout(() => setShowFlashAnim(false), 80);
 
         const zoom = getZoomFactor(lensMM);
         const vw = canvas.width;
@@ -245,10 +218,25 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         
         if (outCtx) {
             outCtx.drawImage(canvas, cx, cy, cropW, cropH, 0, 0, cropW, cropH);
-            applyAestheticPipeline(outCtx, cropW, cropH, PRESETS[activeVibe], true);
+            
+            // Final Identity Overlay
+            const now = new Date();
+            const dateStr = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
+            const fSize = Math.round(cropH * 0.035);
+            outCtx.save();
+            outCtx.font = `bold ${fSize}px "Courier New", monospace`;
+            outCtx.fillStyle = '#facc15';
+            outCtx.shadowColor = 'rgba(0,0,0,0.5)';
+            outCtx.shadowBlur = fSize * 0.2;
+            outCtx.fillText(dateStr, cropW * 0.06, cropH - (cropH * 0.06));
+            outCtx.font = `italic ${fSize * 0.8}px sans-serif`;
+            outCtx.fillStyle = 'rgba(255,255,255,0.4)';
+            outCtx.textAlign = 'right';
+            outCtx.fillText('Neos', cropW - (cropW * 0.06), cropH - (cropH * 0.06));
+            outCtx.restore();
         }
 
-        const dataUrl = outputCanvas.toDataURL('image/jpeg', 0.95);
+        const dataUrl = outputCanvas.toDataURL('image/jpeg', 0.98);
         setCapturedImages(prev => [dataUrl, ...prev]);
     };
 
@@ -258,9 +246,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         <div className="fixed inset-0 z-[600] bg-black flex flex-col overflow-hidden touch-none h-[100dvh] font-sans text-white">
             {showFlashAnim && <div className="fixed inset-0 bg-white z-[1000] animate-flash-out"></div>}
 
-            {/* BARRA SUPERIOR */}
-            <header className="absolute top-0 left-0 right-0 p-5 flex justify-between items-center z-50 bg-gradient-to-b from-black/60 to-transparent">
-                <button onClick={onClose} className="w-10 h-10 flex items-center justify-center bg-black/30 backdrop-blur-xl rounded-full border border-white/10 active:scale-90 transition-all text-xl">&times;</button>
+            <header className="absolute top-0 left-0 right-0 p-5 flex justify-between items-center z-50 bg-gradient-to-b from-black/70 to-transparent">
+                <button onClick={onClose} className="w-10 h-10 flex items-center justify-center bg-black/30 backdrop-blur-xl rounded-full border border-white/10 active:scale-90 transition-all text-xl font-thin">&times;</button>
                 
                 <div className="flex items-center gap-4 bg-white/10 backdrop-blur-xl px-5 py-2 rounded-full border border-white/10">
                     {([24, 35, 50, 85, 101] as LensMM[]).map(mm => (
@@ -284,7 +271,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 </div>
             </header>
 
-            {/* VIEWPORT */}
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden">
                 {viewingGallery ? (
                     <div className="absolute inset-0 z-[200] bg-black flex flex-col animate-fade-in">
@@ -313,28 +299,26 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                             <canvas ref={canvasRef} className="w-full h-full object-cover" />
                         )}
                         
-                        {/* MOLDURA DA LENTE */}
                         <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                             <div 
-                                className="border-[0.5px] border-white/30 transition-all duration-700 ease-out relative rounded-2xl"
+                                className="border-[0.5px] border-white/30 transition-all duration-700 ease-out relative rounded-3xl"
                                 style={{ 
                                     width: `${100 / getZoomFactor(lensMM)}%`,
                                     aspectRatio: '3/4',
-                                    boxShadow: '0 0 0 4000px rgba(0,0,0,0.4)'
+                                    boxShadow: '0 0 0 4000px rgba(0,0,0,0.45)'
                                 }}
                             >
-                                <div className="absolute -top-7 left-1/2 -translate-x-1/2 text-[9px] font-black uppercase tracking-[0.3em] text-white/50">{lensMM}mm</div>
-                                <div className="absolute top-0 left-0 w-4 h-4 border-t border-l border-white/60"></div>
-                                <div className="absolute top-0 right-0 w-4 h-4 border-t border-r border-white/60"></div>
-                                <div className="absolute bottom-0 left-0 w-4 h-4 border-b border-l border-white/60"></div>
-                                <div className="absolute bottom-0 right-0 w-4 h-4 border-b border-r border-white/60"></div>
+                                <div className="absolute -top-8 left-1/2 -translate-x-1/2 text-[9px] font-black uppercase tracking-[0.3em] text-white/40">{lensMM}mm OPTIC</div>
+                                <div className="absolute top-0 left-0 w-6 h-6 border-t border-l border-white/60"></div>
+                                <div className="absolute top-0 right-0 w-6 h-6 border-t border-r border-white/60"></div>
+                                <div className="absolute bottom-0 left-0 w-6 h-6 border-b border-l border-white/60"></div>
+                                <div className="absolute bottom-0 right-0 w-6 h-6 border-b border-r border-white/60"></div>
                             </div>
                         </div>
                     </>
                 )}
             </div>
 
-            {/* VIEWER FULLSCREEN */}
             {fullScreenImage && (
                 <div className="fixed inset-0 z-[300] bg-black flex flex-col animate-fade-in" onClick={() => setFullScreenImage(null)}>
                     <header className="p-6 flex justify-between items-center z-10" onClick={e => e.stopPropagation()}>
@@ -343,7 +327,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                             onClick={() => {
                                 const a = document.createElement('a');
                                 a.href = fullScreenImage;
-                                a.download = `neos-paradise-${Date.now()}.jpg`;
+                                a.download = `neos-rec-${Date.now()}.jpg`;
                                 a.click();
                             }}
                             className="bg-white text-black px-8 py-3 rounded-full font-black uppercase text-[10px] tracking-widest shadow-2xl active:scale-95 transition-all"
@@ -352,16 +336,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                         </button>
                     </header>
                     <div className="flex-grow flex items-center justify-center p-4">
-                        <img src={fullScreenImage} className="max-w-full max-h-full rounded-[2.5rem] shadow-2xl object-contain" />
+                        <img src={fullScreenImage} className="max-w-full max-h-full rounded-[3rem] shadow-2xl object-contain border border-white/5" />
                     </div>
                 </div>
             )}
 
-            {/* CONTROLES INFERIORES */}
-            <footer className="bg-black px-4 pb-12 pt-6 border-t border-white/5 z-50">
+            <footer className="bg-black/90 backdrop-blur-3xl px-4 pb-12 pt-6 border-t border-white/5 z-50">
                 {!viewingGallery ? (
                     <div className="flex flex-col gap-8">
-                        {/* SWIPER DE EFEITOS */}
                         <div className="flex gap-4 overflow-x-auto no-scrollbar py-2 snap-x snap-mandatory px-4">
                             {(Object.values(PRESETS)).map((eff) => (
                                 <button
@@ -371,14 +353,13 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                                 >
                                     <div className={`w-16 h-16 rounded-[1.5rem] flex flex-col items-center justify-center border-2 transition-all ${activeVibe === eff.id ? 'bg-zinc-900 border-sky-400 shadow-[0_0_30px_rgba(14,165,233,0.3)]' : 'bg-zinc-900/50 border-white/10'}`}>
                                         <span className="text-[7px] font-black uppercase text-white/40 tracking-tighter">{eff.label}</span>
-                                        <span className={`text-[9px] font-black uppercase mt-1 tracking-widest ${activeVibe === eff.id ? 'text-white' : 'text-zinc-600'}`}>00{(Object.values(PRESETS)).indexOf(eff)+1}</span>
+                                        <span className={`text-[9px] font-black uppercase mt-1 tracking-widest ${activeVibe === eff.id ? 'text-white' : 'text-zinc-600'}`}>0{(Object.values(PRESETS)).indexOf(eff)+1}</span>
                                     </div>
                                     <span className={`text-[8px] font-black uppercase mt-3 tracking-widest ${activeVibe === eff.id ? 'text-sky-400' : 'text-zinc-500'}`}>{eff.name}</span>
                                 </button>
                             ))}
                         </div>
 
-                        {/* DISPARADOR */}
                         <div className="flex items-center justify-between px-10">
                             <button 
                                 onClick={() => setViewingGallery(true)}
@@ -399,7 +380,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                                 className="w-24 h-24 rounded-full border-4 border-white/20 flex items-center justify-center p-1.5 active:scale-95 transition-all shadow-[0_0_50px_rgba(255,255,255,0.05)]"
                             >
                                 <div className="w-full h-full rounded-full bg-white flex items-center justify-center relative overflow-hidden">
-                                    <div className="w-full h-full rounded-full bg-gradient-to-tr from-zinc-200 to-white"></div>
+                                    <div className="w-full h-full rounded-full bg-gradient-to-tr from-zinc-200 to-white shadow-inner"></div>
                                 </div>
                             </button>
 
