@@ -23,7 +23,6 @@ interface EffectConfig {
     saturation: number;
     temp: number;
     vignette: number;
-    splitToneShadow?: { hue: number; sat: number };
 }
 
 const CAMERA_ENGINE_PACKS: Record<VibeEffect, EffectConfig> = {
@@ -35,8 +34,7 @@ const CAMERA_ENGINE_PACKS: Record<VibeEffect, EffectConfig> = {
     cinematic_pro: { 
         id: 'cinematic_pro', name: 'Arri Raw', label: '🎬', 
         exposure: 1.0, contrast: 1.3, highlights: -0.2, shadows: 0.2, 
-        sharpness: 50, grain: 5, saturation: 1.2, temp: -5, vignette: 0.2,
-        splitToneShadow: { hue: 210, sat: 0.1 }
+        sharpness: 50, grain: 5, saturation: 1.2, temp: -5, vignette: 0.2
     },
     soft_pastel: { 
         id: 'soft_pastel', name: 'Fuji Astia', label: '🌸', 
@@ -64,7 +62,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const streamRef = useRef<MediaStream | null>(null);
     const requestRef = useRef<number | null>(null);
 
-    // Fatores de zoom para simular as lentes
+    // Fatores de zoom: Quanto maior o MM, menor a área capturada (mais zoom)
     const getLensZoom = (mm: LensMM) => {
         switch(mm) {
             case 24: return 1.0;
@@ -78,17 +76,9 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
     const applyAIPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
         ctx.save();
-        
-        // Efeito de Sharpness
-        if (isFinal && config.sharpness > 0) {
-            ctx.filter = `contrast(${1 + config.sharpness/100})`;
-        }
-
-        // Filtros Base
         ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${config.temp}deg)`;
         ctx.drawImage(ctx.canvas, 0, 0);
 
-        // Grão de Filme
         if (config.grain > 0) {
             ctx.filter = 'none';
             ctx.fillStyle = 'white';
@@ -99,7 +89,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.globalAlpha = 1.0;
         }
 
-        // Vinheta
         if (config.vignette > 0) {
             const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w * 0.8);
             grad.addColorStop(0, 'transparent');
@@ -108,7 +97,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.fillRect(0, 0, w, h);
         }
 
-        // Data e Marca d'água (Apenas no final)
         if (isFinal) {
             const now = new Date();
             const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
@@ -124,7 +112,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.letterSpacing = "4px";
             ctx.fillText("PARADISE ENGINE PRO", w * 0.92, h * 0.92);
         }
-
         ctx.restore();
     };
 
@@ -185,10 +172,12 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const vw = canvas.width;
         const vh = canvas.height;
         
-        // Área do quadrado central baseado no zoom da lente
-        const rectSize = Math.min(vw, vh) / zoom;
-        const sx = (vw - rectSize) / 2;
-        const sy = (vh - rectSize * 1.33) / 2; // Proporção vertical 3:4
+        // CÁLCULO ESTREITO DO QUADRADO (O QUE O USUÁRIO VÊ NA MOLDURA)
+        // A moldura ocupa 90% da largura dividida pelo zoom.
+        const sw = (vw * 0.9) / zoom; 
+        const sh = sw * (4/3); // Proporção 3:4
+        const sx = (vw - sw) / 2;
+        const sy = (vh - sh) / 2;
 
         const outCanvas = document.createElement('canvas');
         outCanvas.width = 1200; 
@@ -196,11 +185,10 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const oCtx = outCanvas.getContext('2d');
         
         if (oCtx) {
-            // Desenha apenas o conteúdo dentro do quadrado visível
-            oCtx.drawImage(canvas, sx, sy, rectSize, rectSize * 1.33, 0, 0, 1200, 1600);
+            // CAPTURA APENAS A ÁREA DA MOLDURA
+            oCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, 1200, 1600);
             applyAIPipeline(oCtx, 1200, 1600, CAMERA_ENGINE_PACKS[activeVibe], true);
-            const dataUrl = outCanvas.toDataURL('image/jpeg', 0.95);
-            setCapturedImages(prev => [dataUrl, ...prev]);
+            setCapturedImages(prev => [outCanvas.toDataURL('image/jpeg', 0.95), ...prev]);
         }
     };
 
@@ -224,20 +212,13 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
     return (
         <div className="fixed inset-0 bg-black z-[600] flex flex-col overflow-hidden text-white font-sans touch-none">
-            {showFlashAnim && <div className="fixed inset-0 z-[1000] bg-white animate-fade-out"></div>}
+            {showFlashAnim && <div className="fixed inset-0 z-[1000] bg-white"></div>}
 
-            {/* Header: Controles de Lente */}
             <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-50">
                 <button onClick={onClose} className="w-10 h-10 bg-black/40 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/10 text-xl shadow-2xl active:scale-90">&times;</button>
-                <div className="flex gap-4 bg-black/40 backdrop-blur-xl px-5 py-2 rounded-full border border-white/10 shadow-2xl overflow-x-auto no-scrollbar">
+                <div className="flex gap-4 bg-black/40 backdrop-blur-xl px-5 py-2 rounded-full border border-white/10 shadow-2xl">
                     {([24, 35, 50, 85, 101] as LensMM[]).map(mm => (
-                        <button 
-                            key={mm} 
-                            onClick={() => setLensMM(mm)} 
-                            className={`text-[11px] font-black transition-all ${lensMM === mm ? 'text-sky-400 scale-125' : 'text-white/40'}`}
-                        >
-                            {mm}mm
-                        </button>
+                        <button key={mm} onClick={() => setLensMM(mm)} className={`text-[11px] font-black transition-all ${lensMM === mm ? 'text-sky-400 scale-125' : 'text-white/40'}`}>{mm}mm</button>
                     ))}
                 </div>
                 <button onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')} className="w-10 h-10 bg-black/40 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/10">
@@ -245,33 +226,27 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 </button>
             </header>
 
-            {/* Viewfinder: A imagem amplia conforme a lente, mas o quadrado de recorte guia o usuário */}
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden">
                 <video ref={videoRef} className="hidden" playsInline muted />
                 
-                {/* Imagem Ampliada (Zoom) */}
-                <div 
-                    className="w-full h-full flex items-center justify-center transition-transform duration-500 ease-out"
-                    style={{ transform: `scale(${currentZoom})` }}
-                >
+                <div className="w-full h-full flex items-center justify-center transition-transform duration-500 ease-out" style={{ transform: `scale(${currentZoom})` }}>
                     <canvas ref={canvasRef} className="w-full h-full object-cover" />
                 </div>
 
-                {/* Moldura de Recorte Estática: O que estiver aqui dentro é o que sai na foto */}
+                {/* MOLDURA DE RECORTE: APENAS O QUE ESTÁ DENTRO DISSO É SALVO */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div 
-                        className="border-2 border-white/30 rounded-[3rem] shadow-[0_0_0_2000px_rgba(0,0,0,0.6)] transition-all duration-500"
+                        className="border-2 border-white/50 rounded-[3rem] shadow-[0_0_0_2000px_rgba(0,0,0,0.8)] transition-all duration-500"
                         style={{ width: `${90 / currentZoom}%`, aspectRatio: '3/4' }}
                     >
                          <div className="absolute bottom-6 left-6 opacity-40 flex flex-col gap-0.5">
                             <span className="text-[10px] font-black tracking-widest">{lensMM}MM OPTIC</span>
-                            <span className="text-[8px] font-bold">AREA DE CAPTURA</span>
+                            <span className="text-[8px] font-bold">RECORTE ATIVO</span>
                          </div>
                     </div>
                 </div>
             </div>
 
-            {/* Footer: Efeitos e Captura */}
             <footer className="bg-black px-4 pb-12 pt-6 border-t border-white/5 z-50">
                 <div className="flex flex-col gap-8">
                     <div className="flex gap-4 overflow-x-auto no-scrollbar py-2 px-2 items-center justify-center">
@@ -284,7 +259,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                     </div>
                     <div className="flex items-center justify-between px-10">
                         <button onClick={() => setViewingGallery(true)} className="w-14 h-14 rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden shadow-lg active:scale-95 transition-all">
-                            {capturedImages.length > 0 && <img src={capturedImages[0]} className="w-full h-full object-cover" alt="prev" />}
+                            {capturedImages.length > 0 && <img src={capturedImages[0]} className="w-full h-full object-cover" />}
                         </button>
                         <button onClick={handleCapture} className="w-20 h-20 rounded-full border-4 border-white/30 p-1 active:scale-90 transition-all shadow-[0_0_40px_rgba(255,255,255,0.1)]">
                             <div className="w-full h-full rounded-full bg-white"></div>
@@ -294,25 +269,23 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 </div>
             </footer>
 
-            {/* Galeria Grid */}
             {viewingGallery && (
                 <div className="fixed inset-0 z-[700] bg-black flex flex-col animate-fade-in">
                     <header className="p-6 flex justify-between items-center border-b border-white/10">
-                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Fechar</button>
-                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Film Roll</h3>
+                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Voltar</button>
+                        <h3 className="font-black uppercase tracking-[0.3em] text-xs text-zinc-500">Galeria Paraíso</h3>
                         <div className="w-10"></div>
                     </header>
                     <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5">
                         {capturedImages.map((img, i) => (
                             <div key={i} className="aspect-[3/4] cursor-pointer active:opacity-70" onClick={() => setSelectedImage(img)}>
-                                <img src={img} className="w-full h-full object-cover" alt={`captured-${i}`} />
+                                <img src={img} className="w-full h-full object-cover" />
                             </div>
                         ))}
                     </div>
                 </div>
             )}
 
-            {/* Visualizador Fullscreen */}
             {selectedImage && (
                 <div className="fixed inset-0 z-[800] bg-black flex flex-col animate-fade-in">
                     <header className="p-6 flex justify-between items-center z-10">
@@ -321,30 +294,18 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                         </button>
                     </header>
                     <div className="flex-grow flex items-center justify-center p-4">
-                        <img src={selectedImage} className="max-w-full max-h-full object-contain rounded-3xl shadow-2xl shadow-white/5" alt="Fullscreen" />
+                        <img src={selectedImage} className="max-w-full max-h-full object-contain rounded-[2rem] shadow-2xl" alt="Full" />
                     </div>
                     <footer className="p-8 flex gap-4">
-                        <button 
-                            onClick={() => discardImage(selectedImage)} 
-                            className="flex-1 py-4 rounded-2xl bg-zinc-900 text-red-500 font-black uppercase text-[10px] tracking-widest border border-red-500/20 active:scale-95 transition-all"
-                        >
-                            Descartar
-                        </button>
-                        <button 
-                            onClick={() => saveImage(selectedImage)} 
-                            className="flex-1 py-4 rounded-2xl bg-white text-black font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all"
-                        >
-                            Salvar Foto
-                        </button>
+                        <button onClick={() => discardImage(selectedImage)} className="flex-1 py-4 rounded-2xl bg-zinc-900 text-red-500 font-black uppercase text-[10px] tracking-widest border border-red-500/20 active:scale-95 transition-all">Descartar</button>
+                        <button onClick={() => saveImage(selectedImage)} className="flex-1 py-4 rounded-2xl bg-white text-black font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all">Salvar Foto</button>
                     </footer>
                 </div>
             )}
 
             <style>{`
                 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-                @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
                 .animate-fade-in { animation: fade-in 0.3s ease-out; }
-                .animate-fade-out { animation: fade-out 0.5s ease-out forwards; }
                 .no-scrollbar::-webkit-scrollbar { display: none; }
             `}</style>
         </div>
