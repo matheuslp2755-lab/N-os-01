@@ -70,18 +70,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const chunksRef = useRef<Blob[]>([]);
     const timerRef = useRef<number | null>(null);
 
-    // Zoom óptico real (simulado via recorte central)
-    const getLensZoom = (mm: LensMM) => {
-        switch(mm) {
-            case 24: return 1.0;
-            case 35: return 1.4;
-            case 50: return 2.0;
-            case 85: return 3.2;
-            case 101: return 4.5;
-            default: return 1.0;
-        }
-    };
-
     const handleFocus = (e: React.MouseEvent | React.TouchEvent) => {
         const rect = e.currentTarget.getBoundingClientRect();
         let clientX, clientY;
@@ -206,21 +194,21 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         setShowFlashAnim(true);
         setTimeout(() => setShowFlashAnim(false), 80);
 
-        // MOTOR DE RECORTE MATEMÁTICO REAL:
-        // O preview usa um scale() para o usuário ver o zoom.
-        // A moldura branca ocupa 85% da largura da tela.
-        // Precisamos extrair apenas o que está dentro dessa moldura no sensor original.
+        // MOTOR DE RECORTE ABSOLUTO:
+        // A moldura branca na tela ocupa 85% da largura. A proporção é 3:4.
+        // Como agora o preview NÃO tem zoom (scale 1), o cálculo é direto no sensor.
         
-        const zoom = getLensZoom(lensMM);
+        const vw = canvas.width;
+        const vh = canvas.height;
         
-        // A moldura branca sempre tem proporção 3:4.
-        // Calculamos o tamanho da 'janela' que o usuário vê no sensor original.
-        const sourceWidth = canvas.width / zoom;
-        const sourceHeight = sourceWidth * (4/3); // Proporção da moldura
+        // A moldura visível tem 85% da largura da tela do celular.
+        // Calculamos esse mesmo retângulo de 85% de largura proporcional no sensor.
+        const sourceWidth = vw * 0.85;
+        const sourceHeight = sourceWidth * (4/3);
 
-        // Coordenadas centrais no sensor original
-        const sx = (canvas.width - sourceWidth) / 2;
-        const sy = (canvas.height - sourceHeight) / 2;
+        // Coordenadas centrais para o recorte
+        const sx = (vw - sourceWidth) / 2;
+        const sy = (vh - sourceHeight) / 2;
 
         const outCanvas = document.createElement('canvas');
         outCanvas.width = 1080; 
@@ -228,7 +216,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const oCtx = outCanvas.getContext('2d');
         
         if (oCtx) {
-            // Desenhamos apenas a fatia central do sensor original no canvas de saída
+            // Extrai apenas a fatia central que o usuário vê dentro do quadrado
             oCtx.drawImage(canvas, sx, sy, sourceWidth, sourceHeight, 0, 0, 1080, 1440);
             applyAIPipeline(oCtx, 1080, 1440, CAMERA_ENGINE_PACKS[activeVibe], true);
             setCapturedMedia(prev => [{url: outCanvas.toDataURL('image/jpeg', 0.9), type: 'photo'}, ...prev]);
@@ -259,8 +247,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
     if (!isOpen) return null;
 
-    const currentZoom = getLensZoom(lensMM);
-
     return (
         <div className="fixed inset-0 bg-black z-[600] flex flex-col overflow-hidden text-white font-sans touch-none select-none">
             {showFlashAnim && <div className="fixed inset-0 z-[1000] bg-white"></div>}
@@ -269,7 +255,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 <button onClick={onClose} className="w-10 h-10 bg-black/40 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/10 text-xl shadow-2xl active:scale-90">&times;</button>
                 <div className="flex gap-4 bg-black/40 backdrop-blur-xl px-5 py-2 rounded-full border border-white/10 shadow-2xl">
                     {([24, 35, 50, 85, 101] as LensMM[]).map(mm => (
-                        <button key={mm} onClick={() => setLensMM(mm)} className={`text-[11px] font-black transition-all ${lensMM === mm ? 'text-sky-400 scale-125' : 'text-white/40'}`}>{mm}mm</button>
+                        <button key={mm} onClick={() => setLensMM(mm)} className={`text-[11px] font-black transition-all ${lensMM === mm ? 'text-sky-400 scale-110' : 'text-white/40'}`}>{mm}mm</button>
                     ))}
                 </div>
                 <button onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')} className="w-10 h-10 bg-black/40 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/10">
@@ -280,8 +266,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden" onMouseDown={handleFocus} onTouchStart={handleFocus}>
                 <video ref={videoRef} className="hidden" playsInline muted />
                 
-                {/* Preview com Zoom Visual (o que o usuário vê) */}
-                <div className="w-full h-full flex items-center justify-center transition-transform duration-700 ease-in-out" style={{ transform: `scale(${currentZoom})` }}>
+                {/* PREVIEW SEM ZOOM: Imagem natural do sensor */}
+                <div className="w-full h-full flex items-center justify-center">
                     <canvas ref={canvasRef} className="w-full h-full object-cover" />
                 </div>
 
@@ -295,14 +281,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                     </div>
                 )}
 
-                {/* MOLDURA DE RECORTE (Área Útil) */}
+                {/* MOLDURA DE RECORTE: O QUE ESTÁ DENTRO DISSO É O QUE SERÁ SALVO */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
                     <div 
-                        className="border-4 border-white rounded-[3.5rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)] transition-all duration-700"
-                        style={{ width: `${85 / currentZoom}%`, aspectRatio: '3/4' }}
+                        className="border-4 border-white rounded-[3.5rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)]"
+                        style={{ width: '85%', aspectRatio: '3/4' }}
                     >
                          <div className="absolute bottom-8 left-8 opacity-60 flex flex-col gap-0.5">
-                            <span className="text-[10px] font-black tracking-widest">{lensMM}MM SENSOR PRO</span>
+                            <span className="text-[10px] font-black tracking-widest">{lensMM}MM SIMULATOR</span>
                             <span className="text-[8px] font-bold uppercase tracking-tighter text-sky-400">Fixed Frame Active</span>
                          </div>
                     </div>
