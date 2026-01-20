@@ -54,6 +54,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const [lensMM, setLensMM] = useState<LensMM>(35);
     const [capturedImages, setCapturedImages] = useState<string[]>([]);
     const [viewingGallery, setViewingGallery] = useState(false);
+    const [fullscreenImage, setFullscreenImage] = useState<number | null>(null);
+    const [isEditing, setIsEditing] = useState(false);
     const [showFlashAnim, setShowFlashAnim] = useState(false);
     const [cameraError, setCameraError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
@@ -66,7 +68,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const getZoomFactor = (mm: LensMM) => ({ 24: 1.0, 35: 1.3, 50: 1.8, 85: 2.6, 101: 3.2 }[mm]);
 
     const applyQualityPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
-        // Skin Softening (Simulado)
         if (config.skinSoft > 0) {
             ctx.save();
             ctx.globalAlpha = config.skinSoft * 0.3;
@@ -75,7 +76,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.restore();
         }
 
-        // Color Grading
         const hue = config.temp + (config.magenta || 0);
         ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${hue}deg)`;
         
@@ -88,7 +88,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.drawImage(tempCanvas, 0, 0);
         }
 
-        // Bloom
         if (config.glow > 0) {
             ctx.save();
             ctx.globalAlpha = config.glow * 0.4;
@@ -98,7 +97,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.restore();
         }
 
-        // Watermark Final
         if (isFinal) {
             ctx.save();
             if (config.retroDate) {
@@ -111,7 +109,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.restore();
         }
 
-        // Vignette
         if (config.vignette > 0) {
             const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w);
             grad.addColorStop(0, 'transparent');
@@ -200,6 +197,21 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         setCapturedImages(prev => [outCanvas.toDataURL('image/jpeg', 0.95), ...prev]);
     };
 
+    const handleDelete = (index: number) => {
+        if (window.confirm("Deseja excluir esta foto?")) {
+            setCapturedImages(prev => prev.filter((_, i) => i !== index));
+            setFullscreenImage(null);
+        }
+    };
+
+    const handleSaveLocal = async (dataUrl: string) => {
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `Paradise_${Date.now()}.jpg`;
+        link.click();
+        alert("Salvo na galeria do dispositivo!");
+    };
+
     const handleSaveToPost = async (dataUrl: string) => {
         if (isSaving) return;
         setIsSaving(true);
@@ -220,12 +232,33 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 timestamp: serverTimestamp()
             });
             alert("Postado com sucesso!");
-            onClose();
+            setFullscreenImage(null);
+            setViewingGallery(false);
         } catch (e) {
             console.error(e);
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const applyEditCrop = () => {
+        if (fullscreenImage === null) return;
+        const imgData = capturedImages[fullscreenImage];
+        const img = new Image();
+        img.src = imgData;
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const size = Math.min(img.width, img.height);
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.drawImage(img, (img.width - size) / 2, (img.height - size) / 2, size, size, 0, 0, size, size);
+                const croppedData = canvas.toDataURL('image/jpeg', 0.95);
+                setCapturedImages(prev => prev.map((item, i) => i === fullscreenImage ? croppedData : item));
+                setIsEditing(false);
+            }
+        };
     };
 
     if (!isOpen) return null;
@@ -235,7 +268,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             {showFlashAnim && <div className="fixed inset-0 bg-white z-[1000] animate-pulse"></div>}
 
             <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-50">
-                <button onClick={onClose} className="w-10 h-10 bg-black/40 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/10">&times;</button>
+                <button onClick={onClose} className="w-10 h-10 bg-black/40 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/10 text-xl">&times;</button>
                 <div className="flex gap-4 bg-black/40 backdrop-blur-xl px-4 py-2 rounded-full border border-white/10">
                     {([24, 35, 50, 85] as LensMM[]).map(mm => (
                         <button key={mm} onClick={() => setLensMM(mm)} className={`text-[10px] font-black ${lensMM === mm ? 'text-sky-400' : 'text-white/40'}`}>{mm}mm</button>
@@ -274,40 +307,76 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                     </div>
 
                     <div className="flex items-center justify-between px-8">
-                        <button onClick={() => setViewingGallery(true)} className="w-12 h-12 rounded-xl bg-zinc-900 border border-white/10 overflow-hidden">
-                            {capturedImages.length > 0 && <img src={capturedImages[0]} className="w-full h-full object-cover" />}
+                        <button onClick={() => setViewingGallery(true)} className="w-14 h-14 rounded-xl bg-zinc-900 border-2 border-white/20 overflow-hidden active:scale-95 transition-all">
+                            {capturedImages.length > 0 ? <img src={capturedImages[0]} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] text-zinc-500 font-black">0</div>}
                         </button>
 
-                        <button onClick={executeCapture} className="w-20 h-20 rounded-full border-4 border-white/20 p-1 active:scale-95 transition-all">
+                        <button onClick={executeCapture} className="w-20 h-20 rounded-full border-4 border-white/20 p-1 active:scale-95 transition-all shadow-[0_0_30px_rgba(255,255,255,0.2)]">
                             <div className="w-full h-full rounded-full bg-white"></div>
                         </button>
 
-                        <div className="w-12"></div>
+                        <div className="w-14"></div>
                     </div>
                 </div>
             </footer>
 
             {viewingGallery && (
                 <div className="fixed inset-0 z-[700] bg-black flex flex-col animate-fade-in">
-                    <header className="p-6 flex justify-between items-center border-b border-white/10">
-                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-bold">Voltar</button>
-                        <h3 className="font-black">Galeria Pro</h3>
+                    <header className="p-6 flex justify-between items-center border-b border-white/10 bg-black/80 backdrop-blur-md">
+                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-bold uppercase text-xs tracking-widest">Voltar</button>
+                        <h3 className="font-black uppercase tracking-[0.2em] text-xs">Galeria do Paraíso</h3>
                         <div className="w-10"></div>
                     </header>
-                    <div className="flex-grow overflow-y-auto grid grid-cols-2 gap-4 p-4">
+                    <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-1 p-1 no-scrollbar">
                         {capturedImages.map((img, i) => (
-                            <div key={i} className="flex flex-col gap-2 animate-slide-up">
-                                <img src={img} className="rounded-2xl w-full aspect-[3/4] object-cover" />
-                                <button 
-                                    onClick={() => handleSaveToPost(img)}
-                                    disabled={isSaving}
-                                    className="bg-white text-black py-2 rounded-xl font-black text-[10px] uppercase"
-                                >
-                                    {isSaving ? "Postando..." : "Postar Agora"}
-                                </button>
+                            <div key={i} onClick={() => setFullscreenImage(i)} className="aspect-[3/4] relative cursor-pointer group">
+                                <img src={img} className="w-full h-full object-cover" />
+                                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                             </div>
                         ))}
+                        {capturedImages.length === 0 && (
+                            <div className="col-span-3 py-20 text-center opacity-20">
+                                <p className="text-xs font-black uppercase">Nenhuma foto ainda</p>
+                            </div>
+                        )}
                     </div>
+                </div>
+            )}
+
+            {fullscreenImage !== null && (
+                <div className="fixed inset-0 z-[800] bg-black flex flex-col animate-fade-in">
+                    <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-[810] bg-gradient-to-b from-black/80 to-transparent">
+                        <button onClick={() => { setFullscreenImage(null); setIsEditing(false); }} className="p-2"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M15 19l-7-7 7-7" strokeWidth={2.5}/></svg></button>
+                        <div className="flex gap-4">
+                            <button onClick={() => setIsEditing(!isEditing)} className={`p-2 rounded-xl border ${isEditing ? 'bg-sky-500 border-sky-400' : 'bg-black/40 border-white/10'}`}><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M14.121 14.121L19 19m-7-7l7 7m-7-7l-2.828 2.828.707.707L10.586 15z" strokeWidth={2}/><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" strokeWidth={2}/></svg></button>
+                            <button onClick={() => handleDelete(fullscreenImage!)} className="p-2 bg-black/40 border border-white/10 rounded-xl text-red-400"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth={2}/></svg></button>
+                        </div>
+                    </header>
+
+                    <div className="flex-grow flex items-center justify-center relative bg-black">
+                        <img src={capturedImages[fullscreenImage]} className={`max-h-full max-w-full object-contain ${isEditing ? 'opacity-50' : ''}`} />
+                        {isEditing && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div className="w-72 h-72 border-2 border-white border-dashed rounded-3xl animate-pulse"></div>
+                                <div className="absolute bottom-32 pointer-events-auto">
+                                    <button onClick={applyEditCrop} className="bg-sky-500 px-8 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl">Recortar 1:1</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {!isEditing && (
+                        <footer className="absolute bottom-0 left-0 right-0 p-8 flex gap-4 bg-gradient-to-t from-black/80 to-transparent z-[810]">
+                            <button onClick={() => handleSaveLocal(capturedImages[fullscreenImage!])} className="flex-1 py-4 bg-zinc-800 rounded-3xl font-black text-[10px] uppercase tracking-widest">Salvar no Celular</button>
+                            <button 
+                                onClick={() => handleSaveToPost(capturedImages[fullscreenImage!])}
+                                disabled={isSaving}
+                                className="flex-1 py-4 bg-white text-black rounded-3xl font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95 transition-all"
+                            >
+                                {isSaving ? "Postando..." : "Postar no Néos"}
+                            </button>
+                        </footer>
+                    )}
                 </div>
             )}
         </div>

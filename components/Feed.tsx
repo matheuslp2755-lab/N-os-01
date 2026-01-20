@@ -47,6 +47,13 @@ const Feed: React.FC = () => {
   const currentUser = auth.currentUser;
 
   useEffect(() => {
+    // Pedir permissão de notificação nativa
+    if ("Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+    }
+
     const checkPermission = () => {
       window.OneSignalDeferred = window.OneSignalDeferred || [];
       window.OneSignalDeferred.push(async (OneSignal: any) => {
@@ -60,7 +67,6 @@ const Feed: React.FC = () => {
   }, []);
 
   const handleEnablePush = () => {
-    // Acesso direto ao objeto global OneSignal garantido pelo script no head
     if (window.OneSignal) {
       window.OneSignal.showSlidedownPrompt().then(() => {
         setShowPushBanner(false);
