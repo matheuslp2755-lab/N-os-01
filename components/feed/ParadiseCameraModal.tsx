@@ -18,7 +18,7 @@ interface EffectConfig {
     contrast: number;
     highlights: number;
     shadows: number;
-    sharpness: number; // 0 a 100
+    sharpness: number;
     grain: number;
     saturation: number;
     temp: number;
@@ -52,11 +52,12 @@ const CAMERA_ENGINE_PACKS: Record<VibeEffect, EffectConfig> = {
 };
 
 const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClose }) => {
-    const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+    const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
     const [activeVibe, setActiveVibe] = useState<VibeEffect>('ultra_analog');
     const [lensMM, setLensMM] = useState<LensMM>(35);
     const [capturedImages, setCapturedImages] = useState<string[]>([]);
     const [viewingGallery, setViewingGallery] = useState(false);
+    const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [showFlashAnim, setShowFlashAnim] = useState(false);
 
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -67,10 +68,10 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const getZoomFactor = (mm: LensMM) => {
         switch(mm) {
             case 24: return 1.0;
-            case 35: return 1.5;
-            case 50: return 2.2;
-            case 85: return 3.8;
-            case 101: return 5.5;
+            case 35: return 1.4;
+            case 50: return 2.0;
+            case 85: return 3.2;
+            case 101: return 4.5;
             default: return 1.0;
         }
     };
@@ -78,7 +79,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const applyAIPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
         ctx.save();
         
-        // 1. Super-Resolution Sharpening (Unsharp Mask simulated)
         if (isFinal && config.sharpness > 0) {
             const mix = config.sharpness / 100;
             ctx.globalAlpha = mix;
@@ -87,72 +87,52 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.globalAlpha = 1.0;
         }
 
-        // 2. Base Color Engine
         ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${config.temp}deg)`;
         ctx.drawImage(ctx.canvas, 0, 0);
 
-        // 3. S-Curve Contrast Simulation
-        if (isFinal && config.id === 'ultra_analog') {
-            ctx.globalCompositeOperation = 'soft-light';
-            ctx.fillStyle = 'rgba(0,0,0,0.1)';
-            ctx.fillRect(0,0,w,h);
-            ctx.globalCompositeOperation = 'source-over';
-        }
-
-        // 4. Split Toning (Sombras e Realces)
         if (config.splitToneHighlights) {
             ctx.globalCompositeOperation = 'overlay';
             ctx.globalAlpha = config.splitToneHighlights.sat;
             ctx.fillStyle = `hsl(${config.splitToneHighlights.hue}, 100%, 50%)`;
             ctx.fillRect(0, 0, w, h);
         }
-        if (config.splitToneShadows) {
-            ctx.globalCompositeOperation = 'soft-light';
-            ctx.globalAlpha = config.splitToneShadows.sat;
-            ctx.fillStyle = `hsl(${config.splitToneShadows.hue}, 100%, 20%)`;
-            ctx.fillRect(0, 0, w, h);
-        }
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1.0;
 
-        // 5. Organical Film Grain
         if (config.grain > 0) {
             ctx.filter = 'none';
             ctx.fillStyle = '#ffffff';
             ctx.globalAlpha = config.grain / 255;
-            for(let i=0; i < (isFinal ? 4000 : 600); i++){
+            for(let i=0; i < (isFinal ? 8000 : 800); i++){
                 ctx.fillRect(Math.random()*w, Math.random()*h, 1.2, 1.2);
             }
             ctx.globalAlpha = 1.0;
         }
 
-        // 6. Optical Vignette
         if (config.vignette > 0) {
             ctx.filter = 'none';
             const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w * 0.85);
             grad.addColorStop(0, 'transparent');
-            grad.addColorStop(1, `rgba(0,0,0,${config.vignette + 0.1})`);
+            grad.addColorStop(1, `rgba(0,0,0,${config.vignette + 0.2})`);
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, w, h);
         }
 
-        // 7. Néos Pro Metadata Stamp
         if (isFinal) {
             ctx.filter = 'none';
             const now = new Date();
             const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
-            
-            ctx.font = `bold ${Math.round(h * 0.04)}px "Courier New", monospace`;
-            ctx.fillStyle = '#facc15'; // Amarelo Retro
+            ctx.font = `bold ${Math.round(h * 0.035)}px "Courier New", monospace`;
+            ctx.fillStyle = '#facc15';
             ctx.shadowColor = 'rgba(0,0,0,0.8)';
             ctx.shadowBlur = 10;
             ctx.fillText(dateStr, w * 0.08, h * 0.93);
 
             ctx.font = `900 ${Math.round(h * 0.015)}px sans-serif`;
-            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
             ctx.textAlign = 'right';
             ctx.letterSpacing = "6px";
-            ctx.fillText("NÉOS PARADISE ENGINE", w * 0.92, h * 0.93);
+            ctx.fillText("NÉOS PARADISE PRO", w * 0.92, h * 0.93);
         }
 
         ctx.restore();
@@ -187,7 +167,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
+                video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
                 audio: false
             });
             streamRef.current = stream;
@@ -218,24 +198,37 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const vw = canvas.width;
         const vh = canvas.height;
         
-        // RECORTE ÓPTICO PRECISO: Captura apenas a região do quadrado da lente
-        const cropW = vw / zoom;
-        const cropH = vh / zoom;
-        const sx = (vw - cropW) / 2;
-        const sy = (vh - cropH) / 2;
+        // CÁLCULO DO RECORTE PRECISO (Área dentro do quadrado)
+        const targetW = vw / zoom;
+        const targetH = targetW * (4/3); // Proporção fixa do quadrado de visão
+        const sx = (vw - targetW) / 2;
+        const sy = (vh - targetH) / 2;
 
         const outCanvas = document.createElement('canvas');
-        outCanvas.width = 1440; // High Resolution Target
-        outCanvas.height = 1920;
+        outCanvas.width = 1200; 
+        outCanvas.height = 1600;
         const oCtx = outCanvas.getContext('2d');
         
         if(oCtx) {
-            // Desenha apenas o recorte no canvas final, reamostrando para alta resolução
-            oCtx.drawImage(canvas, sx, sy, cropW, cropH, 0, 0, outCanvas.width, outCanvas.height);
+            oCtx.drawImage(canvas, sx, sy, targetW, targetH, 0, 0, outCanvas.width, outCanvas.height);
             applyAIPipeline(oCtx, outCanvas.width, outCanvas.height, CAMERA_ENGINE_PACKS[activeVibe], true);
         }
 
         setCapturedImages(prev => [outCanvas.toDataURL('image/jpeg', 1.0), ...prev]);
+    };
+
+    const saveToDevice = (dataUrl: string) => {
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `Neos_Paradise_${Date.now()}.jpg`;
+        link.click();
+    };
+
+    const discardImage = (dataUrl: string) => {
+        if (window.confirm("Deseja descartar esta foto permanentemente?")) {
+            setCapturedImages(prev => prev.filter(img => img !== dataUrl));
+            setSelectedImage(null);
+        }
     };
 
     if (!isOpen) return null;
@@ -244,13 +237,13 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
     return (
         <div className="fixed inset-0 bg-black flex flex-col overflow-hidden touch-none h-[100dvh] text-white font-sans z-[600]">
-            {showFlashAnim && <div className="fixed inset-0 z-[1000] bg-white animate-pulse"></div>}
+            {showFlashAnim && <div className="fixed inset-0 z-[1000] bg-white"></div>}
 
             <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-50">
                 <button onClick={onClose} className="w-10 h-10 bg-black/40 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/10 text-xl shadow-2xl active:scale-90">&times;</button>
-                <div className="flex gap-4 bg-black/40 backdrop-blur-xl px-4 py-2 rounded-full border border-white/10 shadow-2xl overflow-x-auto no-scrollbar max-w-[60%]">
+                <div className="flex gap-4 bg-black/40 backdrop-blur-xl px-5 py-2 rounded-full border border-white/10 shadow-2xl">
                     {([24, 35, 50, 85, 101] as LensMM[]).map(mm => (
-                        <button key={mm} onClick={() => setLensMM(mm)} className={`text-[10px] font-black transition-all shrink-0 ${lensMM === mm ? 'text-sky-400 scale-125' : 'text-white/40'}`}>{mm}mm</button>
+                        <button key={mm} onClick={() => setLensMM(mm)} className={`text-[11px] font-black transition-all shrink-0 ${lensMM === mm ? 'text-sky-400 scale-125' : 'text-white/40'}`}>{mm}mm</button>
                     ))}
                 </div>
                 <button onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')} className="w-10 h-10 bg-black/40 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/10 shadow-2xl">
@@ -261,20 +254,19 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden">
                 <video ref={videoRef} className="hidden" playsInline muted />
                 
-                {/* Viewport com Zoom Óptico Simulado */}
                 <div className="w-full h-full flex items-center justify-center transition-transform duration-700 cubic-bezier(0.16, 1, 0.3, 1)" style={{ transform: `scale(${zoom})` }}>
                     <canvas ref={canvasRef} className="w-full h-full object-cover" />
                 </div>
 
-                {/* Guia de Recorte Profissional */}
+                {/* GUIA DE RECORTE: O que estiver dentro desta moldura é o que será salvo */}
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                     <div 
-                        className="border-2 border-white/30 rounded-[3.5rem] shadow-[0_0_0_2000px_rgba(0,0,0,0.6)] transition-all duration-700 ease-out"
+                        className="border-2 border-white/40 rounded-[3rem] shadow-[0_0_0_2000px_rgba(0,0,0,0.7)] transition-all duration-700 ease-out"
                         style={{ width: `${100/zoom}%`, aspectRatio: '3/4' }}
                     >
-                         <div className="absolute bottom-6 left-6 opacity-40 flex flex-col gap-0.5">
-                            <span className="text-[10px] font-black tracking-[0.3em]">{lensMM}MM PRO OPTICS</span>
-                            <span className="text-[8px] font-bold uppercase tracking-widest">Néos Engine v4</span>
+                         <div className="absolute bottom-6 left-6 opacity-60 flex flex-col gap-0.5 drop-shadow-lg">
+                            <span className="text-[10px] font-black tracking-[0.3em]">{lensMM}MM OPTICS</span>
+                            <span className="text-[8px] font-bold uppercase tracking-widest">Recorte Ativo</span>
                          </div>
                     </div>
                 </div>
@@ -305,26 +297,52 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             {viewingGallery && (
                 <div className="fixed inset-0 z-[700] bg-black flex flex-col animate-fade-in">
                     <header className="p-6 flex justify-between items-center border-b border-white/10 bg-black/90 backdrop-blur-md">
-                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Fechar</button>
-                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Galeria Néos Pro</h3>
+                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Fechar Galeria</button>
+                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Capturas Recentes</h3>
                         <div className="w-10"></div>
                     </header>
                     <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5 no-scrollbar">
                         {capturedImages.map((img, i) => (
-                            <div key={i} className="aspect-[3/4] relative cursor-pointer active:opacity-50" onClick={() => {
-                                const link = document.createElement('a');
-                                link.href = img;
-                                link.download = `Neos_Engine_v4_${Date.now()}.jpg`;
-                                link.click();
-                            }}><img src={img} className="w-full h-full object-cover" alt={`img-${i}`} /></div>
+                            <div key={i} className="aspect-[3/4] relative cursor-pointer" onClick={() => setSelectedImage(img)}>
+                                <img src={img} className="w-full h-full object-cover" alt={`img-${i}`} />
+                            </div>
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {selectedImage && (
+                <div className="fixed inset-0 z-[800] bg-black flex flex-col items-center justify-center animate-fade-in p-6">
+                    <button onClick={() => setSelectedImage(null)} className="absolute top-10 left-10 text-white/50 hover:text-white text-xl z-50 bg-black/20 p-2 rounded-full backdrop-blur-md">
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M15 19l-7-7 7-7" strokeWidth={2.5} /></svg>
+                    </button>
+                    
+                    <div className="w-full max-w-lg aspect-[3/4] relative rounded-3xl overflow-hidden shadow-2xl animate-scale-up">
+                        <img src={selectedImage} className="w-full h-full object-contain" alt="Fullscreen View" />
+                    </div>
+
+                    <div className="flex gap-4 mt-12 w-full max-w-xs">
+                        <button 
+                            onClick={() => discardImage(selectedImage)} 
+                            className="flex-1 py-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 font-black uppercase text-xs tracking-widest active:scale-95 transition-all"
+                        >
+                            Descartar
+                        </button>
+                        <button 
+                            onClick={() => saveToDevice(selectedImage)} 
+                            className="flex-1 py-4 rounded-2xl bg-white text-black font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all"
+                        >
+                            Salvar Foto
+                        </button>
                     </div>
                 </div>
             )}
 
             <style>{`
                 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes scale-up { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
                 .animate-fade-in { animation: fade-in 0.3s ease-out; }
+                .animate-scale-up { animation: scale-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
             `}</style>
         </div>
     );
