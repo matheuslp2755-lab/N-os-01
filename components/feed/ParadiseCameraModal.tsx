@@ -70,13 +70,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const chunksRef = useRef<Blob[]>([]);
     const timerRef = useRef<number | null>(null);
 
+    // Multiplicador de zoom óptico real
     const getLensZoom = (mm: LensMM) => {
         switch(mm) {
             case 24: return 1.0;
-            case 35: return 1.4;
-            case 50: return 2.0;
-            case 85: return 3.2;
-            case 101: return 4.5;
+            case 35: return 1.5;
+            case 50: return 2.2;
+            case 85: return 3.5;
+            case 101: return 5.0;
             default: return 1.0;
         }
     };
@@ -116,8 +117,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.filter = 'none';
             ctx.fillStyle = 'white';
             ctx.globalAlpha = config.grain / 255;
-            for(let i=0; i < (isFinal ? 15000 : 1500); i++) {
-                ctx.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5);
+            for(let i=0; i < (isFinal ? 20000 : 1500); i++) {
+                ctx.fillRect(Math.random() * w, Math.random() * h, 1.4, 1.4);
             }
             ctx.globalAlpha = 1.0;
         }
@@ -125,7 +126,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         if (config.vignette > 0) {
             const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w * 0.9);
             grad.addColorStop(0, 'transparent');
-            grad.addColorStop(1, `rgba(0,0,0,${config.vignette + 0.4})`);
+            grad.addColorStop(1, `rgba(0,0,0,${config.vignette + 0.5})`);
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, w, h);
         }
@@ -133,14 +134,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         if (isFinal) {
             const now = new Date();
             const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
-            ctx.font = `bold ${Math.round(h * 0.03)}px Courier, monospace`;
-            ctx.fillStyle = '#fbbf24';
-            ctx.shadowColor = 'black'; ctx.shadowBlur = 4;
+            ctx.font = `bold ${Math.round(h * 0.035)}px "Courier New", monospace`;
+            ctx.fillStyle = '#facc15';
+            ctx.shadowColor = 'black'; ctx.shadowBlur = 5;
             ctx.fillText(dateStr, w * 0.08, h * 0.94);
             ctx.font = `900 ${Math.round(h * 0.015)}px sans-serif`;
-            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
             ctx.textAlign = 'right';
-            ctx.fillText("PARADISE OPTICS", w * 0.92, h * 0.94);
+            ctx.fillText("PARADISE OPTICS PRO", w * 0.92, h * 0.94);
         }
         ctx.restore();
     };
@@ -203,32 +204,34 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         if (!canvas) return;
 
         setShowFlashAnim(true);
-        setTimeout(() => setShowFlashAnim(false), 100);
+        setTimeout(() => setShowFlashAnim(false), 80);
 
-        // O SEGREDO DO RECORTE REAL:
+        // MOTOR DE RECORTE MATEMÁTICO ABSOLUTO
         const zoom = getLensZoom(lensMM);
-        const vw = canvas.width;
-        const vh = canvas.height;
         
-        // A moldura visual é centralizada. Calculamos o retângulo de ORIGEM no canvas.
-        // Se a moldura na tela tem 85% de largura, o recorte deve seguir essa proporção 3:4.
-        const sourceWidth = vw / zoom;
-        const sourceHeight = sourceWidth * (4/3); // Proporção da moldura 3:4
+        // No sensor (canvas real), o que o usuário vê na moldura arredondada (que tem 85% de largura)
+        // é o centro reduzido pelo fator de zoom.
+        const sourceWidth = canvas.width / zoom;
+        const sourceHeight = sourceWidth * (4/3); // Forçamos proporção 3:4 da moldura
 
-        const sx = (vw - sourceWidth) / 2;
-        const sy = (vh - sourceHeight) / 2;
+        // Coordenadas de origem exatas no sensor
+        const sx = (canvas.width - sourceWidth) / 2;
+        const sy = (canvas.height - sourceHeight) / 2;
 
+        // Criamos o arquivo final em alta resolução (1200x1600)
         const outCanvas = document.createElement('canvas');
-        outCanvas.width = 1080; 
-        outCanvas.height = 1440;
+        outCanvas.width = 1200; 
+        outCanvas.height = 1600;
         const oCtx = outCanvas.getContext('2d');
         
         if (oCtx) {
-            // AQUI ESTAVA O ERRO: Precisamos passar os parâmetros de origem (sx, sy, sw, sh)
-            // para o drawImage pegar só o meio.
-            oCtx.drawImage(canvas, sx, sy, sourceWidth, sourceHeight, 0, 0, 1080, 1440);
-            applyAIPipeline(oCtx, 1080, 1440, CAMERA_ENGINE_PACKS[activeVibe], true);
-            setCapturedMedia(prev => [{url: outCanvas.toDataURL('image/jpeg', 0.9), type: 'photo'}, ...prev]);
+            // Recorte físico do sensor: pegamos apenas a área visível calculada
+            oCtx.drawImage(canvas, sx, sy, sourceWidth, sourceHeight, 0, 0, 1200, 1600);
+            
+            // Aplica os efeitos na imagem recortada final
+            applyAIPipeline(oCtx, 1200, 1600, CAMERA_ENGINE_PACKS[activeVibe], true);
+            
+            setCapturedMedia(prev => [{url: outCanvas.toDataURL('image/jpeg', 0.95), type: 'photo'}, ...prev]);
         }
     };
 
@@ -277,54 +280,54 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden" onMouseDown={handleFocus} onTouchStart={handleFocus}>
                 <video ref={videoRef} className="hidden" playsInline muted />
                 
-                {/* Visualização centralizada com o zoom via CSS apenas para o usuário */}
+                {/* Visualização de Zoom (CSS) */}
                 <div className="w-full h-full flex items-center justify-center transition-transform duration-700 ease-in-out" style={{ transform: `scale(${currentZoom})` }}>
                     <canvas ref={canvasRef} className="w-full h-full object-cover" />
                 </div>
 
-                {/* Retícula de Foco */}
+                {/* Retícula de Foco Automático */}
                 {focusPos.active && (
                     <div 
-                        className="absolute w-16 h-16 border-2 border-sky-400 rounded-lg animate-focus-pulse pointer-events-none z-40"
+                        className="absolute w-20 h-20 border border-sky-400/50 rounded-2xl animate-focus-pulse pointer-events-none z-40"
                         style={{ left: `${focusPos.x}%`, top: `${focusPos.y}%`, transform: 'translate(-50%, -50%)' }}
                     >
-                        <div className="absolute inset-0 border border-sky-400/20 scale-150 rounded-lg"></div>
+                        <div className="absolute inset-0 border-2 border-sky-400 scale-75 rounded-xl opacity-60"></div>
                     </div>
                 )}
 
-                {/* MOLDURA DE VISÃO REAL: O QUE ESTÁ AQUI DENTRO É O QUE SERÁ SALVO */}
+                {/* MOLDURA DE RECORTE: O QUE ESTÁ DENTRO DISSO É O QUE SERÁ SALVO */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
                     <div 
-                        className="border-4 border-white/40 rounded-[3rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)] transition-all duration-700"
+                        className="border-4 border-white/40 rounded-[3.5rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)] transition-all duration-700"
                         style={{ width: `${85 / currentZoom}%`, aspectRatio: '3/4' }}
                     >
                          {isRecording && (
-                            <div className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-red-600 px-4 py-1.5 rounded-full shadow-lg">
+                            <div className="absolute top-10 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-red-600 px-4 py-2 rounded-full shadow-lg">
                                 <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
                                 <span className="text-[10px] font-black uppercase tracking-widest">{Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}</span>
                             </div>
                          )}
-                         <div className="absolute bottom-6 left-6 opacity-40 flex flex-col gap-0.5">
-                            <span className="text-[10px] font-black tracking-widest">{lensMM}MM AF ACTIVE</span>
-                            <span className="text-[8px] font-bold uppercase tracking-widest">TRUE CROP ENGINE</span>
+                         <div className="absolute bottom-8 left-8 opacity-40 flex flex-col gap-0.5">
+                            <span className="text-[11px] font-black tracking-widest">{lensMM}MM AF ACTIVE</span>
+                            <span className="text-[9px] font-bold uppercase tracking-tighter">PARADISE CROP ENGINE 2.0</span>
                          </div>
                     </div>
                 </div>
             </div>
 
-            <footer className="bg-black px-4 pb-12 pt-6 border-t border-white/5 z-50">
+            <footer className="bg-black px-4 pb-14 pt-6 border-t border-white/5 z-50">
                 <div className="flex flex-col gap-6">
                     {/* Seletor de Modo */}
-                    <div className="flex justify-center gap-10 mb-2">
-                        <button onClick={() => setCamMode('photo')} className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'photo' ? 'text-white' : 'text-zinc-600'}`}>Foto</button>
-                        <button onClick={() => setCamMode('video')} className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'video' ? 'text-red-500' : 'text-zinc-600'}`}>Vídeo</button>
+                    <div className="flex justify-center gap-12 mb-2">
+                        <button onClick={() => setCamMode('photo')} className={`text-[11px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'photo' ? 'text-white' : 'text-zinc-600'}`}>Foto</button>
+                        <button onClick={() => setCamMode('video')} className={`text-[11px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'video' ? 'text-red-500' : 'text-zinc-600'}`}>Vídeo</button>
                     </div>
 
-                    <div className="flex gap-4 overflow-x-auto no-scrollbar py-2 px-2 items-center justify-center">
+                    <div className="flex gap-5 overflow-x-auto no-scrollbar py-2 px-4 items-center justify-center">
                         {Object.values(CAMERA_ENGINE_PACKS).map(eff => (
                             <button key={eff.id} onClick={() => setActiveVibe(eff.id)} className={`flex flex-col items-center shrink-0 transition-all ${activeVibe === eff.id ? 'scale-110 opacity-100' : 'opacity-30'}`}>
-                                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-xl border ${activeVibe === eff.id ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>{eff.label}</div>
-                                <span className="text-[8px] font-black uppercase mt-2 tracking-widest">{eff.name.split(' ')[0]}</span>
+                                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-xl border ${activeVibe === eff.id ? 'bg-white text-black border-white shadow-[0_0_25px_rgba(255,255,255,0.2)]' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>{eff.label}</div>
+                                <span className="text-[9px] font-black uppercase mt-2 tracking-widest">{eff.name.split(' ')[0]}</span>
                             </button>
                         ))}
                     </div>
@@ -339,9 +342,9 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                         </button>
                         <button 
                             onClick={handleCapture} 
-                            className={`w-20 h-20 rounded-full border-4 p-1 active:scale-90 transition-all shadow-[0_0_40px_rgba(255,255,255,0.1)] ${isRecording ? 'border-red-500' : 'border-white/30'}`}
+                            className={`w-20 h-20 rounded-full border-4 p-1 active:scale-90 transition-all shadow-[0_0_50px_rgba(255,255,255,0.1)] ${isRecording ? 'border-red-500' : 'border-white/30'}`}
                         >
-                            <div className={`w-full h-full rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 scale-75 rounded-lg' : 'bg-white'}`}></div>
+                            <div className={`w-full h-full rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 scale-75 rounded-xl' : 'bg-white'}`}></div>
                         </button>
                         <div className="w-14"></div>
                     </div>
@@ -351,8 +354,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             {viewingGallery && (
                 <div className="fixed inset-0 z-[700] bg-black flex flex-col animate-fade-in">
                     <header className="p-6 flex justify-between items-center border-b border-white/10 bg-black/95">
-                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Sair</button>
-                        <h3 className="font-black uppercase tracking-[0.3em] text-xs text-zinc-300">Film Roll</h3>
+                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[11px] tracking-widest">Sair</button>
+                        <h3 className="font-black uppercase tracking-[0.4em] text-xs text-zinc-300">Paradise Film Roll</h3>
                         <div className="w-10"></div>
                     </header>
                     <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5">
@@ -375,23 +378,26 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M15 19l-7-7 7-7" /></svg>
                         </button>
                     </div>
-                    <div className="w-full max-w-sm aspect-[3/4] rounded-[2.5rem] overflow-hidden shadow-2xl bg-zinc-900 border border-white/10">
+                    <div className="w-full max-w-sm aspect-[3/4] rounded-[3rem] overflow-hidden shadow-2xl bg-zinc-900 border border-white/10">
                         {selectedItem.type === 'video' 
                         ? <video src={selectedItem.url} className="w-full h-full object-cover" controls autoPlay loop /> 
                         : <img src={selectedItem.url} className="w-full h-full object-cover" />}
                     </div>
-                    <div className="mt-12 flex gap-4 w-full max-w-sm">
-                        <button onClick={() => { setCapturedMedia(prev => prev.filter(i => i.url !== selectedItem.url)); setSelectedItem(null); }} className="flex-1 py-4 rounded-2xl bg-zinc-900 text-red-500 font-black uppercase text-[10px] tracking-widest border border-red-500/20 active:scale-95 transition-all">Apagar</button>
-                        <button onClick={() => { const a = document.createElement('a'); a.href = selectedItem.url; a.download = `Paradise_${Date.now()}`; a.click(); }} className="flex-1 py-4 rounded-2xl bg-white text-black font-black uppercase text-[10px] tracking-widest shadow-2xl active:scale-95 transition-all">Salvar</button>
+                    <div className="mt-14 flex gap-5 w-full max-w-sm">
+                        <button onClick={() => { setCapturedMedia(prev => prev.filter(i => i.url !== selectedItem.url)); setSelectedItem(null); }} className="flex-1 py-5 rounded-[1.5rem] bg-zinc-900 text-red-500 font-black uppercase text-[11px] tracking-widest border border-red-500/20 active:scale-95 transition-all">Apagar</button>
+                        <button onClick={() => { const a = document.createElement('a'); a.href = selectedItem.url; a.download = `Paradise_${Date.now()}`; a.click(); }} className="flex-1 py-5 rounded-[1.5rem] bg-white text-black font-black uppercase text-[11px] tracking-widest shadow-2xl active:scale-95 transition-all">Salvar</button>
                     </div>
                 </div>
             )}
 
             <style>{`
                 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-                @keyframes focus-pulse { 0% { transform: translate(-50%, -50%) scale(1.3); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; } }
+                @keyframes focus-pulse { 
+                    0% { transform: translate(-50%, -50%) scale(1.4); opacity: 1; } 
+                    100% { transform: translate(-50%, -50%) scale(1); opacity: 0.2; } 
+                }
                 .animate-fade-in { animation: fade-in 0.3s ease-out; }
-                .animate-focus-pulse { animation: focus-pulse 0.4s ease-out forwards; }
+                .animate-focus-pulse { animation: focus-pulse 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
                 .no-scrollbar::-webkit-scrollbar { display: none; }
             `}</style>
         </div>
