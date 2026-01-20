@@ -98,12 +98,11 @@ const Feed: React.FC = () => {
     setViewMode('profile');
   };
 
-  const handleMenuSelect = (type: 'post' | 'pulse' | 'vibe' | 'paradise') => {
+  const handleMenuSelect = (type: 'post' | 'pulse' | 'vibe') => {
     switch (type) {
         case 'post': setIsGalleryOpen(true); break;
         case 'pulse': setIsCreatePulseOpen(true); break;
         case 'vibe': setIsCreateVibeOpen(true); break;
-        case 'paradise': setIsParadiseOpen(true); break;
     }
   };
 
