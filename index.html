@@ -35,21 +35,25 @@
       @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
     </style>
 
-    <!-- OneSignal SDK v16 - EXCLUSIVE FOR PUSH -->
+    <!-- OneSignal SDK v16 -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
-      OneSignalDeferred.push(async function(OneSignal) {
-        await OneSignal.init({
+      OneSignalDeferred.push(function(OneSignal) {
+        OneSignal.init({
           appId: "efd9d119-b1c7-40d6-944c-1b3d4b749aaa",
-          safari_web_id: "web.onesignal.auto.5e2915a8-1095-4900-b2af-7b25bf2970dd",
-          notifyButton: {
-            enable: false,
-          },
-          allowLocalhostAsSecureOrigin: true,
+          notifyButton: { enable: false },
+          allowLocalhostAsSecureOrigin: true
         });
-        console.log("Néos: OneSignal inicializado com sucesso.");
       });
+
+      // DEBUG: Provar que o OneSignal carregou
+      setTimeout(() => {
+        console.log("Néos Debug - OneSignal Object:", window.OneSignal || "NOT LOADED");
+        if (window.OneSignal) {
+          console.log("Néos Debug - OneSignal Initialized:", OneSignal.isInitialized());
+        }
+      }, 5000);
     </script>
   </head>
   <body>

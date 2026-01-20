@@ -11,6 +11,7 @@ import CallUI from './components/call/CallUI';
 declare global {
   interface Window {
     OneSignalDeferred: any[];
+    OneSignal: any;
   }
 }
 
@@ -20,13 +21,14 @@ const AppContent: React.FC = () => {
   const [authPage, setAuthPage] = useState<'login' | 'signup'>('login');
 
   useEffect(() => {
-    // Limpeza de Service Workers antigos do Firebase para evitar conflitos
+    // REMOVER QUALQUER CÓDIGO DE FIREBASE E SERVICE WORKERS ANTIGOS
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then((registrations) => {
         for (const registration of registrations) {
-          if (registration.active && registration.active.scriptURL.includes('firebase-messaging-sw.js')) {
+          const scriptURL = registration.active?.scriptURL || "";
+          if (scriptURL.includes('firebase-messaging-sw.js') || scriptURL.includes('sw.js')) {
             registration.unregister();
-            console.log("Néos: Service Worker do Firebase removido.");
+            console.log("Néos: Service Worker antigo (" + scriptURL + ") removido.");
           }
         }
       });
@@ -39,9 +41,8 @@ const AppContent: React.FC = () => {
       if (currentUser) {
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(async function(OneSignal: any) {
-          // Login no OneSignal usando o UID do Firebase para segmentação precisa
           await OneSignal.login(currentUser.uid);
-          console.log("Néos: UID sincronizado com OneSignal Audience.");
+          console.log("Néos: UID sincronizado com OneSignal Audience:", currentUser.uid);
         });
       }
     });

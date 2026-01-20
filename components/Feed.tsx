@@ -46,7 +46,6 @@ const Feed: React.FC = () => {
 
   const currentUser = auth.currentUser;
 
-  // Monitorar se o Push está ativo via OneSignal
   useEffect(() => {
     const checkPermission = () => {
       window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -61,23 +60,17 @@ const Feed: React.FC = () => {
   }, []);
 
   const handleEnablePush = () => {
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    window.OneSignalDeferred.push(async (OneSignal: any) => {
-      try {
-        // OBRIGATÓRIO: Prompt manual para navegadores mobile
-        await OneSignal.showSlidedownPrompt();
-        
-        // Listener para quando o usuário aceitar
-        OneSignal.Notifications.addEventListener("permissionChange", async (permission: any) => {
-          if (permission === 'granted') {
-            setShowPushBanner(false);
-            console.log("Néos: Permissão de push concedida pelo usuário.");
-          }
-        });
-      } catch (err) {
-        console.error("Erro ao solicitar push:", err);
-      }
-    });
+    if (window.OneSignal) {
+      console.log("Néos: Disparando slidedown prompt...");
+      window.OneSignal.showSlidedownPrompt().then(() => {
+        setShowPushBanner(false);
+      }).catch((e: any) => console.error("OneSignal Error:", e));
+    } else {
+      window.OneSignalDeferred.push(async (OneSignal: any) => {
+         await OneSignal.showSlidedownPrompt();
+         setShowPushBanner(false);
+      });
+    }
   };
 
   useEffect(() => {
@@ -135,19 +128,23 @@ const Feed: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      {/* Banner de Ativação de Push Manual */}
+      {/* Banner de Ativação de Push Manual OBRIGATÓRIO */}
       {showPushBanner && (
-        <div className="fixed top-0 left-0 right-0 z-[1000] bg-indigo-600 p-3 text-center animate-fade-in">
-          <p className="text-white text-xs font-black uppercase tracking-widest flex items-center justify-center gap-4">
-            Ative as notificações para não perder nada!
-            <button 
-              onClick={handleEnablePush}
-              className="bg-white text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black hover:bg-zinc-100 active:scale-95 transition-all"
-            >
-              Ativar Agora
-            </button>
-            <button onClick={() => setShowPushBanner(false)} className="opacity-50 ml-2">&times;</button>
-          </p>
+        <div className="fixed top-0 left-0 right-0 z-[1000] bg-indigo-600 p-3 text-center animate-fade-in shadow-2xl border-b border-white/10">
+          <div className="max-w-xl mx-auto flex items-center justify-between gap-4">
+            <p className="text-white text-[10px] font-black uppercase tracking-widest text-left leading-tight">
+              Sinta a experiência completa.<br/>Ative as notificações!
+            </p>
+            <div className="flex gap-2">
+              <button 
+                onClick={handleEnablePush}
+                className="bg-white text-indigo-600 px-5 py-2 rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 active:scale-95 transition-all"
+              >
+                Ativar Agora
+              </button>
+              <button onClick={() => setShowPushBanner(false)} className="text-white/40 hover:text-white p-2">&times;</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -222,6 +219,7 @@ const Feed: React.FC = () => {
       <CreatePulseModal isOpen={isCreatePulseOpen} onClose={() => setIsCreatePulseOpen(false)} onPulseCreated={() => setIsCreatePulseOpen(false)} />
       <CreateVibeModal isOpen={isCreateVibeOpen} onClose={() => setIsCreateVibeOpen(false)} onVibeCreated={() => setIsCreateVibeOpen(false)} />
       {isBrowserOpen && <VibeBrowser onClose={() => setIsBrowserOpen(false)} />}
+      <ParadiseCameraModal isOpen={isParadiseOpen} onClose={() => setIsParadiseOpen(false)} />
 
       <style>{`
         @keyframes slide-down { from { transform: translate(-50%, -100%); } to { transform: translate(-50%, 0); } }
