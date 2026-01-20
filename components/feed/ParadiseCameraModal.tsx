@@ -72,19 +72,18 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const streamRef = useRef<MediaStream | null>(null);
     const requestRef = useRef<number | null>(null);
 
-    // Fator de Zoom Real: 24mm é o sensor cheio, 101mm é um recorte fechado (quadrado)
     const getZoomFactor = (mm: LensMM) => {
         switch(mm) {
             case 24: return 1.0;
-            case 35: return 1.4;
-            case 50: return 2.0;
-            case 85: return 3.5;
-            case 101: return 5.0; // Recorte máximo, simulando lente telefoto
+            case 35: return 1.45;
+            case 50: return 2.10;
+            case 85: return 3.40;
+            case 101: return 4.80;
             default: return 1.0;
         }
     };
 
-    const applyEffectPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
+    const applyProfessionalPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
         ctx.save();
         
         // 1. Correção de Cor (Exposição, Contraste, Saturação, Temp)
@@ -92,7 +91,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${sat}) hue-rotate(${config.temp}deg)`;
         ctx.drawImage(ctx.canvas, 0, 0);
 
-        // 2. Simulando Realces e Sombras (via overlay de cor/brilho)
+        // 2. Realces e Sombras dinâmicos
         if (config.highlights < 0) {
             ctx.globalCompositeOperation = 'multiply';
             ctx.globalAlpha = Math.abs(config.highlights) * 0.4;
@@ -108,7 +107,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1.0;
 
-        // 3. Split Toning (Sombras frias/Destaques quentes)
+        // 3. Split Toning
         if (config.splitToneHighlights) {
             ctx.globalCompositeOperation = 'overlay';
             ctx.globalAlpha = config.splitToneHighlights.sat;
@@ -124,7 +123,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1.0;
 
-        // 4. Granulação Procedural (Grão de Filme)
+        // 4. Granulação (Grain)
         if (config.grain > 0) {
             ctx.filter = 'none';
             const grainScale = isFinal ? 2 : 1;
@@ -136,7 +135,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.globalAlpha = 1.0;
         }
 
-        // 5. Vinheta (Profundidade de borda)
+        // 5. Vinheta
         if (config.vignette > 0) {
             ctx.filter = 'none';
             const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w * 0.8);
@@ -146,25 +145,25 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.fillRect(0, 0, w, h);
         }
 
-        // 6. Selos de Autenticidade (Somente na Captura Final)
+        // 6. Selos de Autenticidade (Somente Captura Final)
         if (isFinal) {
             ctx.filter = 'none';
             const now = new Date();
             const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
             
-            // Data Amarela Retro
+            // Data Amarela Vintage
             ctx.font = `bold ${Math.round(h * 0.04)}px "Courier New", monospace`;
-            ctx.fillStyle = '#fde047'; // Amarelo clássico
+            ctx.fillStyle = '#fde047'; 
             ctx.shadowColor = 'rgba(0,0,0,0.6)';
             ctx.shadowBlur = 6;
             ctx.fillText(dateStr, w * 0.08, h * 0.92);
 
-            // Marca Nelcel
+            // Marca d'água Néos
             ctx.font = `900 ${Math.round(h * 0.018)}px sans-serif`;
             ctx.fillStyle = 'rgba(255,255,255,0.7)';
             ctx.textAlign = 'right';
             ctx.letterSpacing = "6px";
-            ctx.fillText("NELCEL", w * 0.92, h * 0.92);
+            ctx.fillText("NÉOS", w * 0.92, h * 0.92);
         }
 
         ctx.restore();
@@ -190,7 +189,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.drawImage(video, 0, 0, vw, vh);
             ctx.restore();
 
-            applyEffectPipeline(ctx, vw, vh, PROFESSIONAL_PACK[activeVibe], false);
+            applyProfessionalPipeline(ctx, vw, vh, PROFESSIONAL_PACK[activeVibe], false);
         }
         requestRef.current = requestAnimationFrame(renderLoop);
     }, [facingMode, activeVibe]);
@@ -230,7 +229,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const vw = canvas.width;
         const vh = canvas.height;
         
-        // CÁLCULO DE RECORTE (CROP): Apenas a área central visível no guia
+        // CROP SYSTEM: Recorta apenas a área central visível no guia da lente
         const cropW = vw / zoom;
         const cropH = vh / zoom;
         const sx = (vw - cropW) / 2;
@@ -242,9 +241,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const oCtx = outCanvas.getContext('2d');
         
         if(oCtx) {
-            // Recorta a imagem baseada na lente
             oCtx.drawImage(canvas, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
-            applyEffectPipeline(oCtx, cropW, cropH, PROFESSIONAL_PACK[activeVibe], true);
+            applyProfessionalPipeline(oCtx, cropW, cropH, PROFESSIONAL_PACK[activeVibe], true);
         }
 
         setCapturedImages(prev => [outCanvas.toDataURL('image/jpeg', 0.98), ...prev]);
@@ -273,19 +271,19 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden">
                 <video ref={videoRef} className="hidden" playsInline muted />
                 
-                {/* Visualização do Viewport com Zoom Dinâmico Suave */}
+                {/* Viewport com Zoom Dinâmico Suave */}
                 <div className="w-full h-full flex items-center justify-center transition-transform duration-700 cubic-bezier(0.16, 1, 0.3, 1)" style={{ transform: `scale(${zoom})` }}>
                     <canvas ref={canvasRef} className="w-full h-full object-cover" />
                 </div>
 
-                {/* Guia de Enquadramento (A área que será cortada) */}
+                {/* Guia de Enquadramento (A área que será cortada baseada na lente) */}
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                     <div 
                         className="border-2 border-white/20 rounded-[2.5rem] shadow-[0_0_0_2000px_rgba(0,0,0,0.5)] transition-all duration-700 ease-out"
                         style={{ width: `${100/zoom}%`, aspectRatio: '3/4' }}
                     >
                          <div className="absolute bottom-6 left-6 opacity-30 flex flex-col gap-0.5">
-                            <span className="text-[10px] font-black tracking-[0.2em]">{lensMM}MM NELCEL OPTICS</span>
+                            <span className="text-[10px] font-black tracking-[0.2em]">{lensMM}MM NÉOS OPTICS</span>
                             <span className="text-[8px] font-bold">f/1.8 RAW SENSOR</span>
                          </div>
                     </div>
@@ -341,7 +339,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                         <button onClick={() => {
                             const link = document.createElement('a');
                             link.href = capturedImages[fullscreenImage!];
-                            link.download = `Nelcel_Paradise_${Date.now()}.jpg`;
+                            link.download = `Neos_Paradise_${Date.now()}.jpg`;
                             link.click();
                         }} className="flex-1 py-5 bg-white text-black rounded-3xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl">Baixar Foto</button>
                     </footer>
