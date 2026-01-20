@@ -110,10 +110,11 @@ const Feed: React.FC = () => {
   };
 
   const handleImagesConfirmed = (imgs: any[]) => {
-      setSelectedMedia(imgs);
+      // Garante que o estado seja atualizado antes de abrir o modal de post
+      setSelectedMedia([...imgs]);
       setIsGalleryOpen(false);
-      // Timeout zero para garantir que o ciclo de renderização do React processe o fechamento antes da abertura
-      setTimeout(() => setIsCreatePostOpen(true), 0);
+      // Timeout para garantir sincronia do ciclo de renderização
+      setTimeout(() => setIsCreatePostOpen(true), 50);
   };
 
   return (
@@ -185,9 +186,14 @@ const Feed: React.FC = () => {
       <MessagesModal isOpen={isMessagesOpen} onClose={() => setIsMessagesOpen(false)} initialTargetUser={targetUserForMessages} initialConversationId={targetConversationId} />
       {viewingPulseGroup && <PulseViewerModal isOpen={!!viewingPulseGroup} pulses={viewingPulseGroup.pulses} authorInfo={viewingPulseGroup.author} initialPulseIndex={0} onClose={() => setViewingPulseGroup(null)} onDelete={() => {}} />}
       
-      {/* CORREÇÃO: GalleryModal e CreatePostModal utilizam selectedMedia compartilhado */}
       <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={handleImagesConfirmed} />
-      <CreatePostModal isOpen={isCreatePostOpen} onClose={() => { setIsCreatePostOpen(false); setSelectedMedia([]); }} onPostCreated={() => { setIsCreatePostOpen(false); setSelectedMedia([]); }} initialImages={selectedMedia} />
+      
+      <CreatePostModal 
+        isOpen={isCreatePostOpen} 
+        onClose={() => { setIsCreatePostOpen(false); setSelectedMedia([]); }} 
+        onPostCreated={() => { setIsCreatePostOpen(false); setSelectedMedia([]); }} 
+        initialImages={selectedMedia} 
+      />
       
       <CreatePulseModal isOpen={isCreatePulseOpen} onClose={() => setIsCreatePulseOpen(false)} onPulseCreated={() => setIsCreatePulseOpen(false)} />
       <CreateVibeModal isOpen={isCreateVibeOpen} onClose={() => setIsCreateVibeOpen(false)} onVibeCreated={() => setIsCreateVibeOpen(false)} />
