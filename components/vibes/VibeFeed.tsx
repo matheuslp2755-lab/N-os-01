@@ -154,6 +154,17 @@ const VibeItem: React.FC<{ vibe: VibeType; isActive: boolean }> = ({ vibe, isAct
             const ctx = canvas?.getContext('2d');
             if (!canvas || !ctx) return;
 
+            // Criar Marca d'água dinâmica
+            const downloadAndSave = async (mediaUrl: string) => {
+                const response = await fetch(mediaUrl);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `neos-vibe-${Date.now()}.mp4`;
+                link.click();
+            };
+
             if (vibe.mediaType === 'image') {
                 const img = new Image();
                 img.crossOrigin = "anonymous";
@@ -164,26 +175,24 @@ const VibeItem: React.FC<{ vibe: VibeType; isActive: boolean }> = ({ vibe, isAct
                 canvas.height = img.height;
                 ctx.drawImage(img, 0, 0);
                 
-                const fontSize = Math.max(20, canvas.width * 0.04);
-                ctx.font = `bold ${fontSize}px sans-serif`;
-                ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+                // Overlay Marca d'água Néos
+                const fontSize = Math.max(24, canvas.width * 0.05);
+                ctx.font = `black ${fontSize}px sans-serif`;
+                ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
                 ctx.shadowColor = "rgba(0,0,0,0.5)";
                 ctx.shadowBlur = 10;
-                ctx.fillText("NÉOS VIBE", 40, canvas.height - 40);
-                ctx.fillText(`@${vibe.user?.username}`, 40, canvas.height - 40 - fontSize);
+                ctx.fillText("NÉOS VIBE", 50, canvas.height - 50);
                 
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
                 const link = document.createElement('a');
-                link.download = `neos-vibe-${vibe.user?.username}.jpg`;
-                link.href = canvas.toDataURL('image/jpeg', 0.9);
+                link.download = `neos-vibe-${Date.now()}.jpg`;
+                link.href = dataUrl;
                 link.click();
             } else {
-                const response = await fetch(vibe.videoUrl);
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `neos-vibe-${vibe.user?.username}.mp4`;
-                link.click();
+                // Para vídeo em web app, salvamos direto. 
+                // A marca d'água em vídeos requer processamento em servidor ou bibliotecas pesadas.
+                // Simulamos o salvamento imediato.
+                await downloadAndSave(vibe.videoUrl);
             }
         } catch (e) {
             console.error("Download failure", e);

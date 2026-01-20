@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { auth, db, doc, serverTimestamp, collection, query, where, getDocs, setDoc, deleteDoc, storage, storageRef, uploadBytes, getDownloadURL, addDoc, updateDoc, limit } from '../../firebase';
+import { auth, db, doc, serverTimestamp, collection, query, where, getDocs, setDoc, deleteDoc, storage, storageRef, uploadBytes, getDownloadURL, addDoc, updateDoc, limit, onSnapshot } from '../../firebase';
 import { useLanguage } from '../../context/LanguageContext';
 import Button from '../common/Button';
 
 interface VibeBeamModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSelectUser?: (userId: string) => void;
 }
 
-const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelectUser }) => {
+const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose }) => {
     const { t } = useLanguage();
-    const [status, setStatus] = useState<'off' | 'searching' | 'beaming' | 'success'>('off');
-    const [nearbyUsers, setNearbyUsers] = useState<any[]>([]);
+    const [mode, setMode] = useState<'selection' | 'sending' | 'receiving'>('selection');
+    const [status, setStatus] = useState<'idle' | 'searching' | 'beaming' | 'success'>('idle');
+    const [nearbyReceivers, setNearbyReceivers] = useState<any[]>([]);
     const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
     const [photoPreview, setPhotoPreview] = useState<string | null>(null);
     const [isSending, setIsSending] = useState(false);
@@ -26,16 +26,38 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
             window.clearInterval(radarInterval.current);
             radarInterval.current = null;
         }
-        setNearbyUsers([]);
+        setNearbyReceivers([]);
         setSelectedPhoto(null);
         setPhotoPreview(null);
-        setStatus('off');
+        setStatus('idle');
+        setMode('selection');
         setIsSending(false);
     };
 
     useEffect(() => {
         if (!isOpen) cleanup();
     }, [isOpen]);
+
+    // Lógica para quem quer RECEBER
+    useEffect(() => {
+        if (mode === 'receiving' && currentUser) {
+            const updatePresence = async () => {
+                navigator.geolocation.getCurrentPosition(async (pos) => {
+                    await updateDoc(doc(db, 'users', currentUser.uid), {
+                        beamStatus: 'receiving',
+                        location: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+                        lastSeen: serverTimestamp()
+                    });
+                });
+            };
+            updatePresence();
+            const interval = setInterval(updatePresence, 10000);
+            return () => {
+                clearInterval(interval);
+                updateDoc(doc(db, 'users', currentUser.uid), { beamStatus: 'idle' });
+            };
+        }
+    }, [mode, currentUser]);
 
     const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -54,45 +76,33 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
                 const myLat = pos.coords.latitude;
                 const myLng = pos.coords.longitude;
 
-                // Atualiza minha posição para que outros também me vejam se usarem o radar
-                await updateDoc(doc(db, 'users', currentUser.uid), {
-                    location: { lat: myLat, lng: myLng },
-                    lastSeen: serverTimestamp()
-                });
-
-                // Busca usuários globais para filtrar por proximidade e atividade
-                // Nota: Em uma escala real usaríamos GeoFirestore, aqui simulamos via query simples + filtro JS
-                const q = query(collection(db, 'users'), limit(100));
+                const q = query(
+                    collection(db, 'users'), 
+                    where('beamStatus', '==', 'receiving'),
+                    limit(50)
+                );
+                
                 const snap = await getDocs(q);
                 const now = Date.now() / 1000;
 
                 const found = snap.docs
                     .map(d => ({ userId: d.id, ...d.data() } as any))
                     .filter(u => {
-                        if (u.userId === currentUser.uid || !u.location || !u.lastSeen) return false;
-                        if (u.appearOnRadar === false) return false;
+                        if (u.userId === currentUser.uid) return false;
+                        const isRecent = u.lastSeen && (now - u.lastSeen.seconds) < 60;
+                        if (!isRecent) return false;
 
-                        // Filtro 1: Estar online nos últimos 5 minutos
-                        const isOnline = (now - u.lastSeen.seconds) < 300; 
-                        if (!isOnline) return false;
-
-                        // Filtro 2: Proximidade Geográfica (aprox 2km)
                         const diffLat = Math.abs(u.location.lat - myLat);
                         const diffLng = Math.abs(u.location.lng - myLng);
-                        return diffLat < 0.02 && diffLng < 0.02;
+                        return diffLat < 0.02 && diffLng < 0.02; // ~2km
                     });
 
-                setNearbyUsers(found);
-            }, (err) => {
-                console.error("Beam GPS Error", err);
-                alert("Ative a localização para usar o Néos Beam.");
-                setStatus('off');
-            }, { enableHighAccuracy: true });
+                setNearbyReceivers(found);
+            });
         };
 
         scanNearby();
-        // Atualiza a lista a cada 8 segundos enquanto o modal estiver aberto
-        radarInterval.current = window.setInterval(scanNearby, 8000);
+        radarInterval.current = window.setInterval(scanNearby, 5000);
     };
 
     const handleSendToUser = async (targetUser: any) => {
@@ -111,7 +121,7 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
             
             await addDoc(collection(conversationRef, 'messages'), {
                 senderId: currentUser.uid,
-                text: "✨ Foto enviada via Néos Beam (Por Aproximação)",
+                text: "✨ Foto enviada via Néos Beam",
                 mediaUrl: url,
                 mediaType: 'image',
                 timestamp: serverTimestamp()
@@ -130,38 +140,7 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
             setStatus('success');
             setTimeout(onClose, 2000);
         } catch (e) {
-            console.error("Beam Transfer Error", e);
-            setStatus('off');
-        } finally {
-            setIsSending(false);
-        }
-    };
-
-    const handleExternalShare = async () => {
-        if (!selectedPhoto || isSending) return;
-        setIsSending(true);
-        try {
-            const path = `beams_external/${currentUser?.uid || 'anon'}/${Date.now()}_${selectedPhoto.name}`;
-            const ref = storageRef(storage, path);
-            await uploadBytes(ref, selectedPhoto);
-            const url = await getDownloadURL(ref);
-
-            if (navigator.share) {
-                await navigator.share({
-                    title: 'Foto via Néos Beam',
-                    text: 'Te enviei uma foto por aproximação!',
-                    url: url
-                });
-                setStatus('success');
-                setTimeout(onClose, 2000);
-            } else {
-                await navigator.clipboard.writeText(url);
-                alert("Link da foto copiado para enviar!");
-                setStatus('success');
-                setTimeout(onClose, 2000);
-            }
-        } catch (e) {
-            console.error("External share error", e);
+            setStatus('idle');
         } finally {
             setIsSending(false);
         }
@@ -175,38 +154,77 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
 
             <div className="w-full max-w-sm flex flex-col items-center text-center gap-8">
                 
-                {status === 'off' && (
-                    <div className="space-y-10 animate-slide-up w-full">
-                        <div className="relative group mx-auto">
-                            <div className="absolute inset-0 bg-sky-500/20 rounded-[3.5rem] blur-3xl animate-pulse"></div>
-                            <div 
-                                onClick={() => fileInputRef.current?.click()}
-                                className="relative w-56 h-56 bg-zinc-900 rounded-[3.5rem] flex flex-col items-center justify-center mx-auto border border-zinc-800 shadow-2xl cursor-pointer hover:scale-105 transition-all overflow-hidden"
-                            >
-                                {photoPreview ? (
-                                    <img src={photoPreview} className="w-full h-full object-cover" />
-                                ) : (
-                                    <>
-                                        <svg className="w-16 h-16 text-sky-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                        <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Escolher Foto</p>
-                                    </>
-                                )}
-                            </div>
-                            <input type="file" ref={fileInputRef} onChange={handlePhotoSelect} accept="image/*" className="hidden" />
-                        </div>
-                        
+                {mode === 'selection' && (
+                    <div className="space-y-12 animate-slide-up w-full">
                         <div className="space-y-2">
                             <h2 className="text-4xl font-black text-white uppercase italic tracking-tighter">Néos Beam</h2>
-                            <p className="text-zinc-500 text-sm px-6 leading-relaxed font-medium">Envie fotos instantâneas para quem está ao seu redor agora.</p>
+                            <p className="text-zinc-500 text-sm font-medium">Como você deseja usar o Beam agora?</p>
                         </div>
+                        
+                        <div className="grid grid-cols-1 gap-4">
+                            <button 
+                                onClick={() => setMode('receiving')}
+                                className="group relative p-8 bg-zinc-900 border border-zinc-800 rounded-[2.5rem] hover:border-sky-500 transition-all text-left overflow-hidden"
+                            >
+                                <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                    <svg className="w-32 h-32 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 14l-7 7m0 0l-7-7m7 7V3" strokeWidth={1}/></svg>
+                                </div>
+                                <h3 className="text-xl font-black text-white uppercase">Receber Foto</h3>
+                                <p className="text-zinc-500 text-xs mt-2">Fique visível no radar para pessoas ao seu redor.</p>
+                            </button>
 
+                            <button 
+                                onClick={() => setMode('sending')}
+                                className="group relative p-8 bg-white rounded-[2.5rem] hover:scale-[1.02] transition-all text-left overflow-hidden"
+                            >
+                                <h3 className="text-xl font-black text-black uppercase">Enviar Foto</h3>
+                                <p className="text-zinc-600 text-xs mt-2">Escolha uma foto e busque sinais próximos.</p>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {mode === 'receiving' && (
+                    <div className="space-y-10 animate-fade-in">
+                        <div className="relative w-48 h-48 mx-auto">
+                            <div className="absolute inset-0 border-4 border-sky-500/30 rounded-full animate-ping"></div>
+                            <div className="absolute inset-4 border-2 border-sky-500/20 rounded-full animate-pulse"></div>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <img src={currentUser?.photoURL || ''} className="w-24 h-24 rounded-full border-4 border-zinc-900 object-cover" />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <h3 className="text-2xl font-black text-white uppercase italic">Aguardando Sinal</h3>
+                            <p className="text-zinc-500 text-sm">Você está visível no radar de quem está por perto.</p>
+                        </div>
+                        <button onClick={() => setMode('selection')} className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.3em]">Cancelar Visibilidade</button>
+                    </div>
+                )}
+
+                {mode === 'sending' && status === 'idle' && (
+                    <div className="space-y-10 animate-slide-up w-full">
+                        <div 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="relative w-56 h-56 bg-zinc-900 rounded-[3.5rem] flex flex-col items-center justify-center mx-auto border border-zinc-800 shadow-2xl cursor-pointer hover:scale-105 transition-all overflow-hidden"
+                        >
+                            {photoPreview ? (
+                                <img src={photoPreview} className="w-full h-full object-cover" />
+                            ) : (
+                                <>
+                                    <svg className="w-16 h-16 text-sky-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                    <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Escolher Foto</p>
+                                </>
+                            )}
+                        </div>
+                        <input type="file" ref={fileInputRef} onChange={handlePhotoSelect} accept="image/*" className="hidden" />
                         <Button 
                             onClick={startRadar}
                             disabled={!selectedPhoto}
-                            className="!py-6 !rounded-[2.5rem] !bg-white !text-black !font-black !uppercase !tracking-widest shadow-2xl active:scale-95 transition-all disabled:opacity-50"
+                            className="!py-6 !rounded-[2.5rem] !bg-white !text-black !font-black !uppercase shadow-2xl disabled:opacity-50"
                         >
-                            Ativar Radar Beam
+                            Escaneia Arredores
                         </Button>
+                        <button onClick={() => setMode('selection')} className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.3em]">Voltar</button>
                     </div>
                 )}
 
@@ -214,7 +232,6 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
                     <div className="w-full space-y-8 animate-fade-in">
                         <div className="relative w-48 h-48 mx-auto">
                             <div className="absolute inset-0 border border-sky-500/30 rounded-full animate-ping"></div>
-                            <div className="absolute inset-0 border border-sky-500/10 rounded-full animate-pulse scale-150"></div>
                             <div className="absolute inset-0 flex items-center justify-center">
                                 <div className="w-20 h-20 rounded-full p-1 bg-gradient-to-tr from-sky-400 to-indigo-500 z-10">
                                     <img src={currentUser?.photoURL || ''} className="w-full h-full rounded-full border-4 border-black object-cover" />
@@ -223,40 +240,26 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
                         </div>
 
                         <div className="space-y-6">
-                            <h3 className="text-white font-black text-lg uppercase tracking-tighter">Sinais Próximos</h3>
-                            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.4em] animate-pulse">Buscando usuários online...</p>
-                            
+                            <h3 className="text-white font-black text-lg uppercase tracking-tighter">Sinais Detectados</h3>
                             <div className="flex flex-col gap-3 max-h-[35vh] overflow-y-auto no-scrollbar py-2">
-                                {nearbyUsers.length > 0 ? nearbyUsers.map(user => (
+                                {nearbyReceivers.length > 0 ? nearbyReceivers.map(user => (
                                     <div
                                         key={user.userId}
                                         onClick={() => handleSendToUser(user)}
                                         className="flex items-center gap-4 p-5 bg-zinc-900 border border-zinc-800 rounded-[2.5rem] hover:bg-zinc-800 transition-all text-left shadow-xl group cursor-pointer"
                                     >
-                                        <div className="relative">
-                                            <img src={user.avatar} className="w-12 h-12 rounded-full object-cover border-2 border-sky-500 shadow-md" />
-                                            <div className="absolute bottom-0 right-0 bg-green-500 w-3 h-3 rounded-full border-2 border-zinc-900"></div>
-                                        </div>
+                                        <img src={user.avatar} className="w-12 h-12 rounded-full object-cover border-2 border-sky-500 shadow-md" />
                                         <div className="flex-grow">
                                             <p className="text-white font-bold text-sm">@{user.username}</p>
-                                            <p className="text-[10px] text-sky-500 font-black uppercase tracking-widest">Enviar por Beam</p>
+                                            <p className="text-[10px] text-sky-500 font-black uppercase tracking-widest">Toque para enviar</p>
                                         </div>
                                         <svg className="w-6 h-6 text-zinc-600 group-hover:text-sky-500 transition-all" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M13 10V3L4 14h7v7l9-11h-7z" strokeWidth={2}/></svg>
                                     </div>
                                 )) : (
                                     <div className="py-10 opacity-30">
-                                        <p className="text-white text-[10px] font-black uppercase tracking-widest">Nenhum sinal online por perto...</p>
+                                        <p className="text-white text-[10px] font-black uppercase tracking-widest animate-pulse">Buscando receptores...</p>
                                     </div>
                                 )}
-                            </div>
-
-                            <div className="pt-4 border-t border-zinc-900">
-                                <button
-                                    onClick={handleExternalShare}
-                                    className="w-full py-5 rounded-[2rem] bg-zinc-100 text-black font-black uppercase text-xs tracking-widest shadow-xl hover:bg-white transition-all active:scale-95"
-                                >
-                                    Compartilhar Link Público
-                                </button>
                             </div>
                         </div>
                     </div>
