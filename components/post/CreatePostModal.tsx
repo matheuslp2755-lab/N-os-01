@@ -28,7 +28,9 @@ interface CreatePostModalProps {
 
 const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPostCreated, initialImages }) => {
     const { t } = useLanguage();
-    const [mediaList, setMediaList] = useState<GalleryImage[]>([]);
+    
+    // Inicializa o estado mediaList diretamente com as imagens recebidas se o modal estiver aberto
+    const [mediaList, setMediaList] = useState<GalleryImage[]>(initialImages || []);
     const [caption, setCaption] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [isFriendsOnly, setIsFriendsOnly] = useState(false);
@@ -38,21 +40,26 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
     const [viewLimit, setViewLimit] = useState('');
     const [isMusicModalOpen, setIsMusicModalOpen] = useState(false);
     
+    // Atualiza o mediaList local quando o initialImages mudar (vindo da galeria)
     useEffect(() => {
         if (isOpen && initialImages && initialImages.length > 0) {
             setMediaList(initialImages);
         }
-        if (isOpen) fetchWeather();
-        if (!isOpen) { 
+    }, [isOpen, initialImages]);
+
+    useEffect(() => {
+        if (isOpen) {
+            fetchWeather();
+        } else { 
+            // Limpa o estado apenas quando fecha definitivamente
             setCaption(''); 
-            setMediaList([]); 
             setIsFriendsOnly(false); 
             setCloseFriendsIds([]); 
             setWeatherData(null);
             setSelectedMusic(null);
             setViewLimit('');
         }
-    }, [isOpen, initialImages]);
+    }, [isOpen]);
 
     const fetchWeather = async () => {
         if ("geolocation" in navigator) {
@@ -120,7 +127,7 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
                         <img src={mediaList[0].preview} className="w-full h-full object-contain" alt="Preview" />
                     ) : (
                         <div className="animate-pulse w-full h-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center">
-                            <span className="text-xs font-black uppercase text-zinc-500">Carregando...</span>
+                            <span className="text-xs font-black uppercase text-zinc-500">Aguardando imagem...</span>
                         </div>
                     )}
                     

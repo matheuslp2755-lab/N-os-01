@@ -41,6 +41,8 @@ const Feed: React.FC = () => {
   const [viewingPulseGroup, setViewingPulseGroup] = useState<any | null>(null);
   const [targetUserForMessages, setTargetUserForMessages] = useState<any>(null);
   const [targetConversationId, setTargetConversationId] = useState<string | null>(null);
+  
+  // ESTADO ELEVADO PARA PERSISTÊNCIA DAS IMAGENS
   const [selectedMedia, setSelectedMedia] = useState<any[]>([]);
 
   const currentUser = auth.currentUser;
@@ -105,6 +107,13 @@ const Feed: React.FC = () => {
         case 'vibe': setIsCreateVibeOpen(true); break;
         case 'paradise': setIsParadiseOpen(true); break;
     }
+  };
+
+  const handleImagesConfirmed = (imgs: any[]) => {
+      setSelectedMedia(imgs);
+      setIsGalleryOpen(false);
+      // Timeout zero para garantir que o ciclo de renderização do React processe o fechamento antes da abertura
+      setTimeout(() => setIsCreatePostOpen(true), 0);
   };
 
   return (
@@ -175,8 +184,11 @@ const Feed: React.FC = () => {
       <CreateMenuModal isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onSelect={handleMenuSelect as any} />
       <MessagesModal isOpen={isMessagesOpen} onClose={() => setIsMessagesOpen(false)} initialTargetUser={targetUserForMessages} initialConversationId={targetConversationId} />
       {viewingPulseGroup && <PulseViewerModal isOpen={!!viewingPulseGroup} pulses={viewingPulseGroup.pulses} authorInfo={viewingPulseGroup.author} initialPulseIndex={0} onClose={() => setViewingPulseGroup(null)} onDelete={() => {}} />}
-      <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={imgs => { setSelectedMedia(imgs); setIsGalleryOpen(false); setIsCreatePostOpen(true); }} />
-      <CreatePostModal isOpen={isCreatePostOpen} onClose={() => setIsCreatePostOpen(false)} onPostCreated={() => setIsCreatePostOpen(false)} initialImages={selectedMedia} />
+      
+      {/* CORREÇÃO: GalleryModal e CreatePostModal utilizam selectedMedia compartilhado */}
+      <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={handleImagesConfirmed} />
+      <CreatePostModal isOpen={isCreatePostOpen} onClose={() => { setIsCreatePostOpen(false); setSelectedMedia([]); }} onPostCreated={() => { setIsCreatePostOpen(false); setSelectedMedia([]); }} initialImages={selectedMedia} />
+      
       <CreatePulseModal isOpen={isCreatePulseOpen} onClose={() => setIsCreatePulseOpen(false)} onPulseCreated={() => setIsCreatePulseOpen(false)} />
       <CreateVibeModal isOpen={isCreateVibeOpen} onClose={() => setIsCreateVibeOpen(false)} onVibeCreated={() => setIsCreateVibeOpen(false)} />
       {isBrowserOpen && <VibeBrowser onClose={() => setIsBrowserOpen(false)} />}
