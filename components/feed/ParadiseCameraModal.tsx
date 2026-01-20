@@ -83,34 +83,29 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         }
     };
 
-    // Algoritmo de Unsharp Mask para melhorar qualidade de câmeras ruins
     const applyAdaptiveSharpening = (ctx: CanvasRenderingContext2D, w: number, h: number, amount: number) => {
         if (amount <= 0) return;
-        const weights = [0, -1, 0, -1, 5, -1, 0, -1, 0];
         const mix = amount / 100;
+        ctx.save();
         ctx.globalAlpha = mix;
-        // Simulação leve de convolução via offsets de drawImage (Performance-friendly)
         ctx.drawImage(ctx.canvas, -1, 0, w, h);
         ctx.drawImage(ctx.canvas, 1, 0, w, h);
         ctx.drawImage(ctx.canvas, 0, -1, w, h);
         ctx.drawImage(ctx.canvas, 0, 1, w, h);
-        ctx.globalAlpha = 1.0;
+        ctx.restore();
     };
 
     const applyProfessionalPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
         ctx.save();
         
-        // 1. Super-Resolution / Sharpness Adaptativo
         if (isFinal) {
             applyAdaptiveSharpening(ctx, w, h, config.sharpness);
         }
 
-        // 2. Correção de Cor Base
         const sat = config.saturation * (config.vibrance || 1.0);
         ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${sat}) hue-rotate(${config.temp}deg)`;
         ctx.drawImage(ctx.canvas, 0, 0);
 
-        // 3. Simulação de Range Dinâmico (HDR Software)
         if (config.highlights < 0) {
             ctx.globalCompositeOperation = 'multiply';
             ctx.globalAlpha = Math.abs(config.highlights) * 0.4;
@@ -126,19 +121,32 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1.0;
 
-        // 4. Granulação de Filme Orgânica
+        if (config.splitToneHighlights) {
+            ctx.globalCompositeOperation = 'overlay';
+            ctx.globalAlpha = config.splitToneHighlights.sat;
+            ctx.fillStyle = `hsl(${config.splitToneHighlights.hue}, 100%, 50%)`;
+            ctx.fillRect(0, 0, w, h);
+        }
+        if (config.splitToneShadows) {
+            ctx.globalCompositeOperation = 'soft-light';
+            ctx.globalAlpha = config.splitToneShadows.sat;
+            ctx.fillStyle = `hsl(${config.splitToneShadows.hue}, 100%, 20%)`;
+            ctx.fillRect(0, 0, w, h);
+        }
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1.0;
+
         if (config.grain > 0) {
             ctx.filter = 'none';
-            const grainScale = isFinal ? 2 : 1;
+            const grainIntensity = isFinal ? config.grain : config.grain / 2;
             ctx.fillStyle = '#ffffff';
-            ctx.globalAlpha = config.grain / 255;
+            ctx.globalAlpha = grainIntensity / 255;
             for(let i=0; i < (isFinal ? 2000 : 400); i++){
-                ctx.fillRect(Math.random()*w, Math.random()*h, grainScale, grainScale);
+                ctx.fillRect(Math.random()*w, Math.random()*h, 1.5, 1.5);
             }
             ctx.globalAlpha = 1.0;
         }
 
-        // 5. Vinheta Óptica
         if (config.vignette > 0) {
             ctx.filter = 'none';
             const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w * 0.85);
@@ -148,25 +156,22 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.fillRect(0, 0, w, h);
         }
 
-        // 6. Selos Profissionais Néos
         if (isFinal) {
             ctx.filter = 'none';
             const now = new Date();
             const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
             
-            // Data Digital Retro
-            ctx.font = `bold ${Math.round(h * 0.038)}px "Courier New", monospace`;
+            ctx.font = `bold ${Math.round(h * 0.04)}px "Courier New", monospace`;
             ctx.fillStyle = '#facc15'; 
             ctx.shadowColor = 'rgba(0,0,0,0.8)';
             ctx.shadowBlur = 8;
             ctx.fillText(dateStr, w * 0.08, h * 0.93);
 
-            // Néos PRO Watermark
-            ctx.font = `900 ${Math.round(h * 0.015)}px sans-serif`;
+            ctx.font = `900 ${Math.round(h * 0.018)}px sans-serif`;
             ctx.fillStyle = 'rgba(255,255,255,0.8)';
             ctx.textAlign = 'right';
             ctx.letterSpacing = "6px";
-            ctx.fillText("NÉOS PARADISE PRO", w * 0.92, h * 0.93);
+            ctx.fillText("NÉOS", w * 0.92, h * 0.93);
         }
 
         ctx.restore();
@@ -238,7 +243,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const sy = (vh - cropH) / 2;
 
         const outCanvas = document.createElement('canvas');
-        outCanvas.width = 1440; // High Resolution Output
+        outCanvas.width = 1440;
         outCanvas.height = 1920;
         const oCtx = outCanvas.getContext('2d');
         
@@ -247,7 +252,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             applyProfessionalPipeline(oCtx, outCanvas.width, outCanvas.height, PROFESSIONAL_PACK[activeVibe], true);
         }
 
-        setCapturedImages(prev => [outCanvas.toDataURL('image/jpeg', 1.0), ...prev]);
+        setCapturedImages(prev => [outCanvas.toDataURL('image/jpeg', 0.98), ...prev]);
     };
 
     if (!isOpen) return null;
@@ -283,8 +288,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                         style={{ width: `${100/zoom}%`, aspectRatio: '3/4' }}
                     >
                          <div className="absolute bottom-6 left-6 opacity-30 flex flex-col gap-0.5">
-                            <span className="text-[10px] font-black tracking-[0.2em]">{lensMM}MM HD OPTICS</span>
-                            <span className="text-[8px] font-bold uppercase">Super-Res Engine Active</span>
+                            <span className="text-[10px] font-black tracking-[0.2em]">{lensMM}MM NÉOS OPTICS</span>
+                            <span className="text-[8px] font-bold uppercase tracking-wider">Super-Res Engine Active</span>
                          </div>
                     </div>
                 </div>
@@ -316,7 +321,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 <div className="fixed inset-0 z-[700] bg-black flex flex-col animate-fade-in">
                     <header className="p-6 flex justify-between items-center border-b border-white/10 bg-black/90 backdrop-blur-md">
                         <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Fechar</button>
-                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Galeria Paradise</h3>
+                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Galeria Néos</h3>
                         <div className="w-10"></div>
                     </header>
                     <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5 no-scrollbar">

@@ -42,7 +42,6 @@ const Feed: React.FC = () => {
   const [targetUserForMessages, setTargetUserForMessages] = useState<any>(null);
   const [targetConversationId, setTargetConversationId] = useState<string | null>(null);
   
-  // ESTADO PERSISTENTE PARA AS IMAGENS CONVERTIDAS (BLOBS)
   const [selectedMedia, setSelectedMedia] = useState<any[]>([]);
 
   const currentUser = auth.currentUser;
@@ -108,17 +107,14 @@ const Feed: React.FC = () => {
     }
   };
 
-  // CONFIRMAÇÃO: Salva no estado global e abre o editor com as URLs já convertidas
   const handleImagesConfirmed = (imgs: any[]) => {
       setSelectedMedia([...imgs]);
       setIsGalleryOpen(false);
-      // Timeout para garantir que o modal feche antes de abrir o próximo com o novo estado
       setTimeout(() => setIsCreatePostOpen(true), 100);
   };
 
   const handleCloseCreatePost = () => {
       setIsCreatePostOpen(false);
-      // Limpa Blobs da memória apenas quando o post for cancelado ou finalizado
       selectedMedia.forEach(m => {
           if (m.preview && m.preview.startsWith('blob:')) URL.revokeObjectURL(m.preview);
       });

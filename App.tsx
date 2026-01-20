@@ -21,28 +21,16 @@ const AppContent: React.FC = () => {
   const [authPage, setAuthPage] = useState<'login' | 'signup'>('login');
 
   useEffect(() => {
-    // REMOVER QUALQUER CÓDIGO DE FIREBASE E SERVICE WORKERS ANTIGOS
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        for (const registration of registrations) {
-          const scriptURL = registration.active?.scriptURL || "";
-          if (scriptURL.includes('firebase-messaging-sw.js') || scriptURL.includes('sw.js')) {
-            registration.unregister();
-            console.log("Néos: Service Worker antigo (" + scriptURL + ") removido.");
-          }
-        }
-      });
-    }
-
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
 
       if (currentUser) {
+        // Sync OneSignal login
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(async function(OneSignal: any) {
           await OneSignal.login(currentUser.uid);
-          console.log("Néos: UID sincronizado com OneSignal Audience:", currentUser.uid);
+          console.log("Néos: OneSignal login synced:", currentUser.uid);
         });
       }
     });
