@@ -17,9 +17,9 @@ interface GalleryModalProps {
 const processImagePipeline = async (file: File): Promise<GalleryImage> => {
     let finalFile: File | Blob = file;
 
-    // 1. DETECÇÃO E CONVERSÃO OBRIGATÓRIA DE HEIC
+    // 1. CONVERSÃO OBRIGATÓRIA DE HEIC PARA JPEG (Correção Crítica para iPhone)
     if (file.type === "image/heic" || file.type === "image/heif" || file.name.toLowerCase().endsWith(".heic")) {
-        console.log("Pipeline: Convertendo HEIC...");
+        console.log("Néos Pipeline: Convertendo HEIC de iPhone para JPEG...");
         try {
             const converted = await heic2any({
                 blob: file,
@@ -27,13 +27,14 @@ const processImagePipeline = async (file: File): Promise<GalleryImage> => {
                 quality: 0.8
             });
             const blob = Array.isArray(converted) ? converted[0] : converted;
+            // Criamos um novo File em formato JPEG para garantir compatibilidade total
             finalFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: "image/jpeg" });
         } catch (e) {
-            console.error("Pipeline: Falha na conversão HEIC:", e);
+            console.error("Néos Pipeline: Erro crítico na conversão HEIC:", e);
         }
     }
 
-    // 2. NORMALIZAÇÃO VIA CANVAS (Resize e Redução de Peso)
+    // 2. NORMALIZAÇÃO VIA CANVAS (Resize, Correção de Orientação e Preview Estável)
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -44,6 +45,7 @@ const processImagePipeline = async (file: File): Promise<GalleryImage> => {
                 let height = img.height;
                 const maxDim = 1200;
 
+                // Mantém proporção limitando o tamanho máximo para performance
                 if (width > maxDim || height > maxDim) {
                     if (width > height) {
                         height *= maxDim / width;
@@ -57,14 +59,17 @@ const processImagePipeline = async (file: File): Promise<GalleryImage> => {
                 canvas.width = width;
                 canvas.height = height;
                 const ctx = canvas.getContext('2d');
-                if (!ctx) return reject('ctx null');
+                if (!ctx) return reject('Néos Canvas: Erro de contexto');
+                
                 ctx.drawImage(img, 0, 0, width, height);
+                
+                // Exporta como Blob JPEG estável
                 canvas.toBlob((blob) => {
                     if (blob) {
                         const preview = URL.createObjectURL(blob);
                         resolve({ file: blob, preview });
                     } else {
-                        reject('blob null');
+                        reject('Néos Pipeline: Falha ao gerar Blob final');
                     }
                 }, 'image/jpeg', 0.85);
             };
@@ -91,6 +96,7 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
 
     useEffect(() => {
         if (!isOpen) {
+            // Limpeza de Blobs antigos para evitar vazamento de memória
             galleryImages.forEach(img => {
                 if (img.preview.startsWith('blob:')) URL.revokeObjectURL(img.preview);
             });
@@ -120,7 +126,7 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
                 videoRef.current.srcObject = stream;
             }
         } catch (err) {
-            console.error("Camera access error:", err);
+            console.error("Erro ao acessar câmera:", err);
         }
     };
 
@@ -139,11 +145,11 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
             
             try {
                 const processed = await Promise.all(files.map(async (file: File) => {
-                    console.log("Processando imagem:", file.name, file.type);
-                    if (file.type.startsWith('image/') || file.name.toLowerCase().endsWith(".heic")) {
+                    // Normaliza qualquer imagem (HEIC inclusa) antes de mostrar na galeria
+                    if (file.type.startsWith('image/') || file.name.toLowerCase().match(/\.(heic|heif)$/i)) {
                         return await processImagePipeline(file);
                     }
-                    // Fallback para outros tipos (ex: vídeo)
+                    // Fallback para outros tipos não-imagem
                     const url = URL.createObjectURL(file);
                     return { file, preview: url };
                 }));
@@ -153,7 +159,7 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
                     setSelectedImages([processed[0]]);
                 }
             } catch (err) {
-                console.error("Processing error", err);
+                console.error("Néos Gallery: Erro de processamento", err);
             } finally {
                 setIsProcessing(false);
             }
@@ -224,7 +230,7 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
                     </div>
                 ) : (
                     <div className="relative flex-grow bg-black">
-                        <video ref={videoRef} autoPlay playsInline muted className={`w-full h-full object-cover ${facingMode === 'user' ? 'mirrored' : ''}`} style={facingMode === 'user' ? { transform: 'scaleX(-1)' } : {}} />
+                        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" style={facingMode === 'user' ? { transform: 'scaleX(-1)' } : {}} />
                         <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center gap-12 z-20">
                             <button onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')} className="p-5 bg-zinc-800/80 backdrop-blur-md rounded-full text-white">
                                 <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
