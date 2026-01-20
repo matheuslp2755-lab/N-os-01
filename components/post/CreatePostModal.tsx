@@ -7,7 +7,7 @@ import TextInput from '../common/TextInput';
 import AddMusicModal from './AddMusicModal';
 
 interface GalleryImage {
-    file: File;
+    file: File | Blob;
     preview: string;
 }
 
@@ -39,7 +39,9 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
     const [isMusicModalOpen, setIsMusicModalOpen] = useState(false);
     
     useEffect(() => {
-        if (isOpen && initialImages) setMediaList(initialImages);
+        if (isOpen && initialImages && initialImages.length > 0) {
+            setMediaList(initialImages);
+        }
         if (isOpen) fetchWeather();
         if (!isOpen) { 
             setCaption(''); 
@@ -76,8 +78,9 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
         if (mediaList.length === 0 || submitting) return;
         setSubmitting(true);
         try {
-            const urls = await Promise.all(mediaList.map(async (item) => {
-                const path = `posts/${auth.currentUser?.uid}/${Date.now()}-${item.file.name}`;
+            const urls = await Promise.all(mediaList.map(async (item, idx) => {
+                const fileName = item.file instanceof File ? item.file.name : `image-${idx}.jpg`;
+                const path = `posts/${auth.currentUser?.uid}/${Date.now()}-${fileName}`;
                 const ref = storageRef(storage, path);
                 await uploadBytes(ref, item.file);
                 return await getDownloadURL(ref);
@@ -113,7 +116,13 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
         <div className="fixed inset-0 bg-black/95 z-[100] flex flex-col md:p-10 overflow-hidden animate-fade-in">
             <div className="w-full h-full max-w-5xl mx-auto bg-white dark:bg-zinc-950 md:rounded-[3rem] flex flex-col md:flex-row overflow-hidden shadow-2xl">
                 <div className="relative w-full md:w-[60%] aspect-square md:aspect-auto bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border-r dark:border-zinc-800">
-                    {mediaList.length > 0 && <img src={mediaList[0].preview} className="w-full h-full object-contain" />}
+                    {mediaList.length > 0 ? (
+                        <img src={mediaList[0].preview} className="w-full h-full object-contain" alt="Preview" />
+                    ) : (
+                        <div className="animate-pulse w-full h-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center">
+                            <span className="text-xs font-black uppercase text-zinc-500">Carregando...</span>
+                        </div>
+                    )}
                     
                     {weatherData && (
                         <div className="absolute top-4 left-4 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 flex items-center gap-2 pointer-events-none">

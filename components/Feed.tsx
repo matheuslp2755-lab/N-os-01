@@ -25,7 +25,6 @@ const Feed: React.FC = () => {
   const [posts, setPosts] = useState<any[]>([]);
   const [usersWithPulses, setUsersWithPulses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showPushBanner, setShowPushBanner] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   
   const [inAppAlert, setInAppAlert] = useState<{show: boolean, title: string, body: string, type: 'message' | 'system'} | null>(null);
@@ -47,37 +46,16 @@ const Feed: React.FC = () => {
   const currentUser = auth.currentUser;
 
   useEffect(() => {
-    // Pedir permissão de notificação nativa
+    // Pedir permissão de notificação nativa ao entrar
     if ("Notification" in window) {
       if (Notification.permission === "default") {
         Notification.requestPermission();
       }
     }
 
-    const checkPermission = () => {
-      window.OneSignalDeferred = window.OneSignalDeferred || [];
-      window.OneSignalDeferred.push(async (OneSignal: any) => {
-        const permission = await OneSignal.Notifications.permission;
-        if (permission !== 'granted') {
-          setShowPushBanner(true);
-        }
-      });
-    };
-    checkPermission();
+    // OneSignal initialization check
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
   }, []);
-
-  const handleEnablePush = () => {
-    if (window.OneSignal) {
-      window.OneSignal.showSlidedownPrompt().then(() => {
-        setShowPushBanner(false);
-      });
-    } else {
-      window.OneSignalDeferred.push(async (OneSignal: any) => {
-         await OneSignal.showSlidedownPrompt();
-         setShowPushBanner(false);
-      });
-    }
-  };
 
   useEffect(() => {
     if (!currentUser) return;
@@ -134,25 +112,6 @@ const Feed: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      {showPushBanner && (
-        <div className="fixed top-0 left-0 right-0 z-[1000] bg-sky-600 p-3 text-center animate-fade-in shadow-xl">
-          <div className="max-w-xl mx-auto flex items-center justify-between gap-4">
-            <p className="text-white text-[10px] font-black uppercase tracking-widest text-left leading-tight">
-              Ative as notificações para receber atualizações em tempo real!
-            </p>
-            <div className="flex gap-2">
-              <button 
-                onClick={handleEnablePush}
-                className="bg-white text-sky-600 px-5 py-2 rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 active:scale-95 transition-all"
-              >
-                Ativar agora
-              </button>
-              <button onClick={() => setShowPushBanner(false)} className="text-white/40 hover:text-white p-2">&times;</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {inAppAlert && (
         <div className="fixed top-2 left-1/2 -translate-x-1/2 z-[2000] w-[95%] max-w-md animate-slide-down">
           <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-2xl border border-white/20 dark:border-zinc-800 p-4 rounded-[2rem] shadow-2xl flex items-center gap-4">
