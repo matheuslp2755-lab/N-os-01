@@ -42,7 +42,7 @@ const Feed: React.FC = () => {
   const [targetUserForMessages, setTargetUserForMessages] = useState<any>(null);
   const [targetConversationId, setTargetConversationId] = useState<string | null>(null);
   
-  // ESTADO PERSISTENTE PARA AS IMAGENS JÁ CONVERTIDAS
+  // ESTADO PERSISTENTE PARA AS IMAGENS CONVERTIDAS (BLOBS)
   const [selectedMedia, setSelectedMedia] = useState<any[]>([]);
 
   const currentUser = auth.currentUser;
@@ -53,7 +53,6 @@ const Feed: React.FC = () => {
         Notification.requestPermission();
       }
     }
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
   }, []);
 
   useEffect(() => {
@@ -109,23 +108,19 @@ const Feed: React.FC = () => {
     }
   };
 
-  // FUNÇÃO CRÍTICA: Salva no estado global e abre o editor APÓS a conversão feita na galeria
+  // CONFIRMAÇÃO: Salva no estado global e abre o editor com as URLs já convertidas
   const handleImagesConfirmed = (imgs: any[]) => {
       setSelectedMedia([...imgs]);
       setIsGalleryOpen(false);
-      // Pequeno timeout para o ciclo do React fechar um modal antes de montar o outro
-      setTimeout(() => {
-          setIsCreatePostOpen(true);
-      }, 50);
+      // Timeout para garantir que o modal feche antes de abrir o próximo com o novo estado
+      setTimeout(() => setIsCreatePostOpen(true), 100);
   };
 
   const handleCloseCreatePost = () => {
       setIsCreatePostOpen(false);
-      // Limpeza de memória
+      // Limpa Blobs da memória apenas quando o post for cancelado ou finalizado
       selectedMedia.forEach(m => {
-          if (m.preview && m.preview.startsWith('blob:')) {
-              URL.revokeObjectURL(m.preview);
-          }
+          if (m.preview && m.preview.startsWith('blob:')) URL.revokeObjectURL(m.preview);
       });
       setSelectedMedia([]);
   };
@@ -200,7 +195,12 @@ const Feed: React.FC = () => {
       {viewingPulseGroup && <PulseViewerModal isOpen={!!viewingPulseGroup} pulses={viewingPulseGroup.pulses} authorInfo={viewingPulseGroup.author} initialPulseIndex={0} onClose={() => setViewingPulseGroup(null)} onDelete={() => {}} />}
       
       <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={handleImagesConfirmed} />
-      <CreatePostModal isOpen={isCreatePostOpen} onClose={handleCloseCreatePost} onPostCreated={handleCloseCreatePost} initialImages={selectedMedia} />
+      <CreatePostModal 
+        isOpen={isCreatePostOpen} 
+        onClose={handleCloseCreatePost} 
+        onPostCreated={handleCloseCreatePost} 
+        initialImages={selectedMedia} 
+      />
       
       <CreatePulseModal isOpen={isCreatePulseOpen} onClose={() => setIsCreatePulseOpen(false)} onPulseCreated={() => setIsCreatePulseOpen(false)} />
       <CreateVibeModal isOpen={isCreateVibeOpen} onClose={() => setIsCreateVibeOpen(false)} onVibeCreated={() => setIsCreateVibeOpen(false)} />

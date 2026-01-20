@@ -15,14 +15,15 @@ interface GalleryModalProps {
 }
 
 /**
- * PIPELINE OBRIGATÓRIO DE CONVERSÃO E NORMALIZAÇÃO
- * Detecta HEIC, converte para JPEG e normaliza via Canvas para preview estável.
+ * PIPELINE DE CONVERSÃO E NORMALIZAÇÃO NÉOS
+ * Converte HEIC para JPEG e normaliza via Canvas para garantir renderização universal.
  */
 const processImagePipeline = async (file: File): Promise<GalleryImage> => {
-    let finalFile: File | Blob = file;
+    let sourceFile: File | Blob = file;
 
-    // 1. Conversão HEIC (iPhone) para JPEG
+    // 1. Detectar e Converter HEIC (iPhone)
     if (file.type === "image/heic" || file.type === "image/heif" || file.name.toLowerCase().endsWith(".heic")) {
+        console.log("Néos Pipeline: Convertendo HEIC para JPEG...");
         try {
             const converted = await heic2any({
                 blob: file,
@@ -30,22 +31,22 @@ const processImagePipeline = async (file: File): Promise<GalleryImage> => {
                 quality: 0.8
             });
             const blob = Array.isArray(converted) ? converted[0] : converted;
-            finalFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: "image/jpeg" });
+            sourceFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: "image/jpeg" });
         } catch (e) {
-            console.error("Néos Pipeline: Falha na conversão HEIC", e);
+            console.error("Néos Pipeline: Erro na conversão HEIC", e);
         }
     }
 
-    // 2. Normalização via Canvas para gerar Blob URL estável
+    // 2. Normalização via Canvas (Garante que a imagem seja renderizável e cria Blob URL estável)
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => {
             const img = new Image();
             img.onload = () => {
                 const canvas = document.createElement('canvas');
+                const maxDim = 1280;
                 let width = img.width;
                 let height = img.height;
-                const maxDim = 1200;
 
                 if (width > maxDim || height > maxDim) {
                     if (width > height) {
@@ -60,7 +61,7 @@ const processImagePipeline = async (file: File): Promise<GalleryImage> => {
                 canvas.width = width;
                 canvas.height = height;
                 const ctx = canvas.getContext('2d');
-                if (!ctx) return reject('Erro de contexto');
+                if (!ctx) return reject('Erro de contexto canvas');
                 
                 ctx.drawImage(img, 0, 0, width, height);
                 
@@ -69,15 +70,15 @@ const processImagePipeline = async (file: File): Promise<GalleryImage> => {
                         const preview = URL.createObjectURL(blob);
                         resolve({ file: blob, preview });
                     } else {
-                        reject('Erro ao gerar blob final');
+                        reject('Falha ao gerar blob final');
                     }
                 }, 'image/jpeg', 0.85);
             };
-            img.onerror = reject;
+            img.onerror = () => reject('Erro ao carregar imagem no canvas');
             img.src = e.target?.result as string;
         };
-        reader.onerror = reject;
-        reader.readAsDataURL(finalFile);
+        reader.onerror = () => reject('Erro ao ler arquivo');
+        reader.readAsDataURL(sourceFile);
     });
 };
 
@@ -96,8 +97,12 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
 
     useEffect(() => {
         if (!isOpen) {
+            // Limpa recursos mas não os selecionados que foram enviados ao Feed
             galleryImages.forEach(img => {
-                if (img.preview.startsWith('blob:')) URL.revokeObjectURL(img.preview);
+                const isSelected = selectedImages.some(s => s.preview === img.preview);
+                if (!isSelected && img.preview.startsWith('blob:')) {
+                    URL.revokeObjectURL(img.preview);
+                }
             });
             setGalleryImages([]);
             setSelectedImages([]);
@@ -118,41 +123,29 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
         stopCamera();
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: facingMode, width: { ideal: 1280 }, height: { ideal: 1280 } } 
+                video: { facingMode: facingMode, width: { ideal: 1080 }, height: { ideal: 1080 } } 
             });
             setCameraStream(stream);
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-            }
-        } catch (err) {
-            console.error("Câmera indisponível", err);
-        }
+            if (videoRef.current) videoRef.current.srcObject = stream;
+        } catch (err) { console.error("Câmera indisponível", err); }
     };
 
     useEffect(() => {
-        if (activeTab === 'camera' && isOpen) {
-            startCamera();
-        } else {
-            stopCamera();
-        }
+        if (activeTab === 'camera' && isOpen) startCamera();
+        else stopCamera();
     }, [activeTab, isOpen, facingMode]);
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             setIsProcessing(true);
             const files = Array.from(e.target.files);
-            
             try {
-                const processed = await Promise.all(files.map(async (file: File) => {
-                    return await processImagePipeline(file);
-                }));
-
+                // Fix: Explicitly casting each file in the array to File to avoid TypeScript errors
+                const processed = await Promise.all(files.map(file => processImagePipeline(file as File)));
                 setGalleryImages(prev => [...processed, ...prev]);
-                if (selectedImages.length === 0) {
-                    setSelectedImages([processed[0]]);
-                }
+                if (selectedImages.length === 0) setSelectedImages([processed[0]]);
             } catch (err) {
-                console.error("Erro ao processar imagens", err);
+                console.error("Erro no processamento da galeria", err);
             } finally {
                 setIsProcessing(false);
             }
@@ -169,13 +162,9 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
         const ctx = canvas.getContext('2d');
         if (ctx) {
             ctx.save();
-            if (facingMode === 'user') {
-                ctx.translate(canvas.width, 0);
-                ctx.scale(-1, 1);
-            }
+            if (facingMode === 'user') { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             ctx.restore();
-
             canvas.toBlob((blob) => {
                 if (blob) {
                     const preview = URL.createObjectURL(blob);
@@ -193,11 +182,11 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
     return (
         <div className="fixed inset-0 bg-white dark:bg-black z-[60] flex flex-col animate-fade-in">
             <header className="flex-shrink-0 flex items-center justify-between p-4 border-b dark:border-zinc-800">
-                <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
+                <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full">
                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
                 <h2 className="text-sm font-black uppercase tracking-widest">
-                    {isProcessing ? 'Convertendo...' : `${t('gallery.title')} (${selectedImages.length}/20)`}
+                    {isProcessing ? 'Processando...' : `${t('gallery.title')} (${selectedImages.length}/20)`}
                 </h2>
                 <Button onClick={() => onImagesSelected(selectedImages)} disabled={selectedImages.length === 0 || isProcessing} className="!w-auto !py-1.5 !px-5 !text-[10px] font-black !rounded-full">
                     {t('gallery.next')}

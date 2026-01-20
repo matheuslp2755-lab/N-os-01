@@ -29,29 +29,28 @@ interface CreatePostModalProps {
 const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPostCreated, initialImages }) => {
     const { t } = useLanguage();
     
-    // Sincronização robusta com o estado de imagens convertidas
+    // ESTADO LOCAL QUE CONSOME AS IMAGENS CONVERTIDAS
     const [mediaList, setMediaList] = useState<GalleryImage[]>([]);
     const [caption, setCaption] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [isFriendsOnly, setIsFriendsOnly] = useState(false);
-    const [closeFriendsIds, setCloseFriendsIds] = useState<string[]>([]);
     const [weatherData, setWeatherData] = useState<{ temp: number; code: number } | null>(null);
     const [selectedMusic, setSelectedMusic] = useState<MusicInfo | null>(null);
     const [viewLimit, setViewLimit] = useState('');
     const [isMusicModalOpen, setIsMusicModalOpen] = useState(false);
     
+    // SINCRONIZAÇÃO INSTANTÂNEA AO ABRIR
     useEffect(() => {
         if (isOpen) {
             if (initialImages && initialImages.length > 0) {
-                // Sincroniza imediatamente o preview local com o Blob URL persistente e compatível
+                // Sincroniza imediatamente o preview local com o Blob URL universal
                 setMediaList([...initialImages]);
             }
             fetchWeather();
         } else { 
-            // Reset de campos de texto ao fechar
             setCaption(''); 
+            setMediaList([]);
             setIsFriendsOnly(false); 
-            setCloseFriendsIds([]); 
             setWeatherData(null);
             setSelectedMusic(null);
             setViewLimit('');
@@ -71,9 +70,7 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
                             code: data.current_weather.weathercode
                         });
                     }
-                } catch (e) {
-                    console.error("Weather fetch error", e);
-                }
+                } catch (e) { console.error("Erro clima", e); }
             });
         }
     };
@@ -83,7 +80,7 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
         setSubmitting(true);
         try {
             const urls = await Promise.all(mediaList.map(async (item, idx) => {
-                const fileName = item.file instanceof File ? item.file.name : `image-${idx}-${Date.now()}.jpg`;
+                const fileName = item.file instanceof File ? item.file.name : `neos-img-${idx}-${Date.now()}.jpg`;
                 const path = `posts/${auth.currentUser?.uid}/${Date.now()}-${fileName}`;
                 const ref = storageRef(storage, path);
                 await uploadBytes(ref, item.file);
@@ -102,7 +99,6 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
                 likes: [],
                 timestamp: serverTimestamp(),
                 isFriendOnly: isFriendsOnly,
-                closeFriendsIds: isFriendsOnly ? closeFriendsIds : [],
                 weather: weatherData,
                 musicInfo: selectedMusic,
                 viewLimit: finalViewLimit,
@@ -121,8 +117,9 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
     return (
         <div className="fixed inset-0 bg-black/95 z-[100] flex flex-col md:p-10 overflow-hidden animate-fade-in">
             <div className="w-full h-full max-w-5xl mx-auto bg-white dark:bg-zinc-950 md:rounded-[3rem] flex flex-col md:flex-row overflow-hidden shadow-2xl">
-                {/* PREVIEW DA IMAGEM CONVERTIDA */}
-                <div className="relative w-full md:w-[60%] aspect-square md:aspect-auto bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border-r dark:border-zinc-800">
+                
+                {/* ÁREA DE PREVIEW: USA A URL CONVERTIDA NO PIPELINE */}
+                <div className="relative w-full md:w-[60%] aspect-square md:aspect-auto bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border-r dark:border-zinc-800 overflow-hidden">
                     {mediaList.length > 0 ? (
                         <img 
                             src={mediaList[0].preview} 
@@ -130,8 +127,9 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
                             alt="Preview" 
                         />
                     ) : (
-                        <div className="animate-pulse w-full h-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center">
-                            <span className="text-xs font-black uppercase text-zinc-500 tracking-tighter">Preparando Imagem...</span>
+                        <div className="flex flex-col items-center gap-3">
+                            <div className="w-10 h-10 border-4 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Normalizando imagem...</span>
                         </div>
                     )}
                     
@@ -140,17 +138,6 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
                             <span className="text-[10px] font-black text-white uppercase tracking-widest">
                                 {weatherData.code <= 3 ? '☀️ Sol' : '🌧️ Chuva'} • {weatherData.temp}°C
                             </span>
-                        </div>
-                    )}
-
-                    {selectedMusic && (
-                        <div className="absolute bottom-4 left-4 right-4 bg-white/10 backdrop-blur-xl border border-white/20 p-3 rounded-2xl flex items-center gap-3 animate-slide-up">
-                            <img src={selectedMusic.capa} className="w-10 h-10 rounded-lg object-cover shadow-lg" alt="Cover" />
-                            <div className="flex-grow overflow-hidden">
-                                <p className="text-white text-[10px] font-black uppercase truncate">{selectedMusic.nome}</p>
-                                <p className="text-white/60 text-[8px] font-bold uppercase truncate">{selectedMusic.artista}</p>
-                            </div>
-                            <button onClick={() => setSelectedMusic(null)} className="text-white/40 hover:text-white p-1">&times;</button>
                         </div>
                     )}
                 </div>
@@ -162,46 +149,34 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
                             {submitting ? '...' : 'Postar'}
                         </Button>
                     </header>
+                    
                     <TextAreaInput id="cap" label="Legenda" value={caption} onChange={e => setCaption(e.target.value)} />
                     
                     <div className="mt-6 space-y-4">
                         <div className="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-2xl">
-                            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 block">Limite de Visualizações (por pessoa)</label>
+                            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 block">Limite de Visualizações</label>
                             <TextInput 
                                 id="view-limit" 
                                 type="number" 
-                                placeholder="Deixe vazio para ilimitado" 
+                                placeholder="Ilimitado" 
                                 value={viewLimit} 
                                 onChange={e => setViewLimit(e.target.value)} 
                                 label="Ex: 5"
-                                className="!bg-white dark:!bg-zinc-800"
                             />
-                            <p className="text-[8px] text-zinc-400 mt-2 uppercase font-bold">Cada pessoa só poderá ver o post este número de vezes no feed.</p>
                         </div>
 
                         <button 
                             onClick={() => setIsMusicModalOpen(true)}
-                            className="w-full flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-900 rounded-2xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all group"
+                            className="w-full flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-900 rounded-2xl hover:bg-zinc-100 transition-all group"
                         >
                             <div className="flex items-center gap-4">
                                 <div className="p-2.5 bg-sky-500/10 rounded-xl text-sky-500 group-hover:scale-110 transition-transform">
                                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
                                 </div>
-                                <div className="text-left">
-                                    <span className="text-sm font-bold block">{selectedMusic ? 'Trocar Trilha Sonora' : 'Adicionar Música'}</span>
-                                    <p className="text-[10px] text-zinc-500 uppercase tracking-tighter">Escolha a vibe da sua foto</p>
-                                </div>
+                                <span className="text-sm font-bold">{selectedMusic ? 'Trocar Trilha' : 'Adicionar Música'}</span>
                             </div>
                             <svg className="w-5 h-5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M9 5l7 7-7 7" /></svg>
                         </button>
-
-                        <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-900 rounded-2xl">
-                            <div className="flex flex-col">
-                                <span className="text-sm font-bold">Amigos Próximos ⭐</span>
-                                <p className="text-[10px] text-zinc-500 uppercase tracking-tighter">Somente quem você escolher verá</p>
-                            </div>
-                            <input type="checkbox" checked={isFriendsOnly} onChange={e => setIsFriendsOnly(e.target.checked)} className="w-6 h-6 accent-green-500 cursor-pointer" />
-                        </div>
                     </div>
                 </div>
             </div>
