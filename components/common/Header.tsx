@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-/* Added orderBy to the imports from ../../firebase */
 import { auth, db, collection, query, where, getDocs, limit, doc, serverTimestamp, onSnapshot, writeBatch, getDoc, updateDoc, orderBy } from '../../firebase';
 import { useLanguage } from '../../context/LanguageContext';
 import { VerifiedBadge } from '../profile/UserProfile';
@@ -31,9 +30,9 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
     const [searchResults, setSearchResults] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [isActivityDropdownOpen, setIsActivityDropdownOpen] = useState(false);
+    const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const currentUser = auth.currentUser;
-    const searchRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!currentUser) return;
@@ -55,7 +54,7 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
                     collection(db, 'users'),
                     where('username_lowercase', '>=', searchQuery.toLowerCase()),
                     where('username_lowercase', '<=', searchQuery.toLowerCase() + '\uf8ff'),
-                    limit(5)
+                    limit(15)
                 );
                 const querySnapshot = await getDocs(q);
                 const users = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -68,17 +67,6 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
         }, 300);
         return () => clearTimeout(delayDebounceFn);
     }, [searchQuery]);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-                setSearchQuery('');
-                setSearchResults([]);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
 
     const markAllAsRead = async () => {
         if (!currentUser) return;
@@ -96,6 +84,12 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
         setIsActivityDropdownOpen(!isActivityDropdownOpen);
     };
 
+    const closeSearch = () => {
+        setIsSearchOverlayOpen(false);
+        setSearchQuery('');
+        setSearchResults([]);
+    };
+
     const getNotificationText = (n: Notification) => {
         switch(n.type) {
             case 'follow': return 'começou a seguir você.';
@@ -110,35 +104,21 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
     return (
         <header className="fixed top-0 left-0 right-0 bg-white dark:bg-black border-b dark:border-zinc-800 z-50">
             <div className="container mx-auto px-4 h-16 flex items-center justify-between max-w-5xl">
-                <div className="flex items-center gap-3">
-                    <h1 onClick={onGoHome} className="text-3xl cursor-pointer font-black bg-gradient-to-r from-indigo-500 via-purple-600 to-pink-500 text-transparent bg-clip-text tracking-tighter italic">Néos</h1>
-                </div>
-
-                <div className="hidden md:flex flex-1 max-w-xs mx-4 relative" ref={searchRef}>
-                    <div className="w-full flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-xl px-3 py-1.5 border border-transparent focus-within:border-zinc-300 dark:focus-within:border-zinc-700 transition-all">
-                        <svg className="w-4 h-4 text-zinc-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                        <input 
-                            type="text" 
-                            placeholder={t('header.searchPlaceholder')} 
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="bg-transparent w-full text-sm outline-none font-medium"
-                        />
+                <div className="flex items-center gap-4 flex-1">
+                    <h1 onClick={onGoHome} className="text-3xl cursor-pointer font-black bg-gradient-to-r from-indigo-500 via-purple-600 to-pink-500 text-transparent bg-clip-text tracking-tighter italic shrink-0">Néos</h1>
+                    
+                    {/* Barra de pesquisa compacta ao lado do logo */}
+                    <div 
+                        onClick={() => setIsSearchOverlayOpen(true)}
+                        className="flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-full px-4 py-2 cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all max-w-[200px] w-full group"
+                    >
+                        <svg className="w-4 h-4 text-zinc-400 mr-2 group-hover:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        <span className="text-zinc-400 text-sm font-medium truncate">Pesquisar...</span>
                     </div>
-                    {searchResults.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-zinc-950 border dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-fade-in">
-                            {searchResults.map(user => (
-                                <button key={user.id} onClick={() => { onSelectUser(user.id); setSearchQuery(''); setSearchResults([]); }} className="w-full flex items-center gap-3 p-3 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors text-left border-b last:border-0 dark:border-zinc-900">
-                                    <img src={user.avatar} className="w-8 h-8 rounded-full object-cover" />
-                                    <span className="text-sm font-bold flex items-center">{user.username} {user.isVerified && <VerifiedBadge className="w-3 h-3 ml-1" />}</span>
-                                </button>
-                            ))}
-                        </div>
-                    )}
                 </div>
 
                 <nav className="flex items-center gap-3 sm:gap-4">
-                    <button onClick={onOpenBrowser} className="p-1.5 text-indigo-500"><svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg></button>
+                    <button onClick={onOpenBrowser} className="p-1.5 text-indigo-500 hover:scale-110 transition-transform"><svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg></button>
                     
                     <div className="relative">
                         <button onClick={toggleActivity} className="relative hover:scale-110 transition-transform">
@@ -164,6 +144,70 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
                     <button onClick={() => onOpenMessages()} className="hover:scale-110 transition-transform"><svg className="w-7 h-7 text-zinc-800 dark:text-zinc-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M22 2L11 13M22 2L15 22L11 13M11 13L2 9L22 2Z"/></svg></button>
                 </nav>
             </div>
+
+            {/* Tela de Pesquisa Fullscreen */}
+            {isSearchOverlayOpen && (
+                <div className="fixed inset-0 bg-white dark:bg-black z-[100] animate-fade-in flex flex-col">
+                    <header className="flex items-center gap-4 p-4 border-b dark:border-zinc-800 shrink-0">
+                        <button onClick={closeSearch} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-full transition-all">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M15 19l-7-7 7-7"/></svg>
+                        </button>
+                        <div className="flex-grow flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-2xl px-4 py-2.5">
+                            <svg className="w-5 h-5 text-zinc-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            <input 
+                                autoFocus
+                                type="text" 
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Pesquisar por nome ou usuário..."
+                                className="w-full bg-transparent outline-none text-base font-bold dark:text-white"
+                            />
+                            {isSearching && <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>}
+                        </div>
+                    </header>
+                    
+                    <main className="flex-grow overflow-y-auto p-4 no-scrollbar">
+                        <div className="max-w-xl mx-auto">
+                            {searchResults.length > 0 ? (
+                                <div className="space-y-2">
+                                    {searchResults.map(user => (
+                                        <button 
+                                            key={user.id} 
+                                            onClick={() => { onSelectUser(user.id); closeSearch(); }} 
+                                            className="w-full flex items-center gap-4 p-4 hover:bg-zinc-50 dark:hover:bg-zinc-900 rounded-3xl transition-all text-left group"
+                                        >
+                                            <div className="relative">
+                                                <img src={user.avatar} className="w-14 h-14 rounded-full object-cover border-2 border-transparent group-hover:border-indigo-500/50 transition-all" />
+                                            </div>
+                                            <div className="flex-grow">
+                                                <div className="flex items-center gap-1">
+                                                    <span className="font-black text-base">{user.username}</span>
+                                                    {user.isVerified && <VerifiedBadge className="w-4 h-4" />}
+                                                </div>
+                                                <p className="text-xs text-zinc-500 font-medium">Ver perfil de {user.username}</p>
+                                            </div>
+                                            <svg className="w-5 h-5 text-zinc-300 group-hover:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M9 5l7 7-7 7" /></svg>
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : searchQuery.length > 0 && !isSearching ? (
+                                <div className="py-20 text-center space-y-4 opacity-30">
+                                    <div className="w-20 h-20 bg-zinc-100 dark:bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-6">
+                                        <svg className="w-10 h-10 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                    </div>
+                                    <h3 className="text-xl font-black uppercase tracking-widest">Nenhum sinal encontrado</h3>
+                                    <p className="text-sm font-bold">Tente um termo de busca diferente</p>
+                                </div>
+                            ) : !searchQuery && (
+                                <div className="py-20 text-center space-y-4 opacity-20">
+                                    <h3 className="text-2xl font-black italic uppercase tracking-tighter bg-gradient-to-r from-indigo-500 to-pink-500 text-transparent bg-clip-text">Encontre sua Vibe</h3>
+                                    <p className="text-xs font-black uppercase tracking-[0.3em]">Pesquise amigos e conexões</p>
+                                </div>
+                            )}
+                        </div>
+                    </main>
+                </div>
+            )}
         </header>
     );
 };
