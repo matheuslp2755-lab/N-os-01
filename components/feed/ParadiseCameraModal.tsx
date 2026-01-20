@@ -70,6 +70,9 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
     const [showFlashAnim, setShowFlashAnim] = useState(false);
     const [cameraError, setCameraError] = useState<string | null>(null);
+    
+    // Estados para foco manual
+    const [focusPoint, setFocusPoint] = useState<{ x: number, y: number } | null>(null);
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -79,6 +82,52 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const getZoomFactor = (mm: LensMM) => {
         const factors = { 24: 1.0, 35: 1.3, 50: 1.8, 85: 2.6, 101: 3.2 };
         return factors[mm];
+    };
+
+    const handleManualFocus = async (e: React.MouseEvent | React.TouchEvent) => {
+        if (!streamRef.current || viewingGallery) return;
+
+        const videoTrack = streamRef.current.getVideoTracks()[0];
+        const capabilities = videoTrack.getCapabilities() as any;
+        
+        // Calcular coordenadas relativas ao elemento do canvas
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (!rect) return;
+
+        let clientX, clientY;
+        if ('touches' in e) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = (e as React.MouseEvent).clientX;
+            clientY = (e as React.MouseEvent).clientY;
+        }
+
+        const x = (clientX - rect.left) / rect.width;
+        const y = (clientY - rect.top) / rect.height;
+
+        setFocusPoint({ x: clientX, y: clientY });
+        setTimeout(() => setFocusPoint(null), 1500);
+
+        try {
+            // Aplicar foco e exposição no ponto clicado se suportado pelo navegador/dispositivo
+            const constraints: any = {};
+            if (capabilities.focusMode?.includes('manual')) {
+                constraints.focusMode = 'manual';
+                // Alguns navegadores suportam pointsOfInterest
+                constraints.pointsOfInterest = [{ x, y }];
+            }
+            if (capabilities.exposureMode?.includes('manual')) {
+                constraints.exposureMode = 'manual';
+                constraints.exposurePointsOfInterest = [{ x, y }];
+            }
+
+            if (Object.keys(constraints).length > 0) {
+                await videoTrack.applyConstraints({ advanced: [constraints] } as any);
+            }
+        } catch (err) {
+            console.warn("Manual focus not fully supported on this device/browser", err);
+        }
     };
 
     const applyQualityPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
@@ -324,7 +373,21 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                                 <button onClick={() => startCamera()} className="bg-sky-500 text-white px-10 py-4 rounded-full font-black text-[10px] uppercase tracking-widest shadow-2xl">Tentar Novamente</button>
                             </div>
                         ) : (
-                            <canvas ref={canvasRef} className="w-full h-full object-cover" />
+                            <div className="w-full h-full relative cursor-crosshair" onClick={handleManualFocus}>
+                                <canvas ref={canvasRef} className="w-full h-full object-cover" />
+                                
+                                {focusPoint && (
+                                    <div 
+                                        className="absolute w-20 h-20 border-2 border-sky-400 rounded-2xl animate-focus-pulse pointer-events-none"
+                                        style={{ 
+                                            left: focusPoint.x - 40,
+                                            top: focusPoint.y - 40
+                                        }}
+                                    >
+                                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-1 bg-sky-400 rounded-full"></div>
+                                    </div>
+                                )}
+                            </div>
                         )}
                         
                         <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
@@ -448,6 +511,12 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 .animate-slide-up { animation: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
                 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
                 .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
+                @keyframes focus-pulse {
+                    0% { transform: scale(1.2); opacity: 0.8; }
+                    50% { transform: scale(1); opacity: 1; }
+                    100% { transform: scale(0.9); opacity: 0; }
+                }
+                .animate-focus-pulse { animation: focus-pulse 1.5s ease-out forwards; }
             `}</style>
         </div>
     );

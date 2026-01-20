@@ -7,57 +7,32 @@ admin.initializeApp();
 const ONESIGNAL_APP_ID = 'e1dcfeb7-6f34-440a-b65c-f61e2b3253a2';
 const ONESIGNAL_REST_KEY = 'os_v2_app_4hop5n3pgrcavns46ypcwmstujyv4dga5npeinn5ydjjp2ewvmjih7brfkklwx4gvd774vehuhyt5gwzolbtcru56aob6up6zbrrlxq';
 
-/**
- * Função genérica para enviar push via REST API do OneSignal
- */
 async function sendPushNotification(targetUserId: string, title: string, body: string, data: any = {}) {
     try {
         const payload = {
             app_id: ONESIGNAL_APP_ID,
-            // Alveja o usuário pelo UID do Firebase que foi vinculado no frontend via OneSignal.login()
             include_external_user_ids: [targetUserId],
             headings: { en: title, pt: title },
             contents: { en: body, pt: body },
             data: data,
-            priority: 10, // Prioridade alta para despertar o celular
-            android_visibility: 1,
-            ios_badgeType: 'Increase',
-            ios_badgeCount: 1,
-            web_buttons: data.type === 'CALL' ? [
-                { id: 'answer', text: 'Atender', icon: 'https://cdn-icons-png.flaticon.com/512/5585/5585856.png' }
-            ] : []
+            priority: 10
         };
-
-        const response = await axios.post(
-            'https://onesignal.com/api/v1/notifications',
-            payload,
-            {
-                headers: {
-                    'Content-Type': 'application/json; charset=utf-8',
-                    'Authorization': `Basic ${ONESIGNAL_REST_KEY}`
-                }
-            }
-        );
-        console.log(`Push enviado para ${targetUserId}:`, response.data);
-        return response.data;
-    } catch (error: any) {
-        console.error(`Erro ao enviar push para ${targetUserId}:`, error?.response?.data || error.message);
-        return null;
-    }
+        await axios.post('https://onesignal.com/api/v1/notifications', payload, {
+            headers: { 'Content-Type': 'application/json; charset=utf-8', 'Authorization': `Basic ${ONESIGNAL_REST_KEY}` }
+        });
+    } catch (error: any) { console.error(`Erro Push:`, error.message); }
 }
 
 /**
- * Gatilho: Nova Mensagem no Chat
+ * Gatilho: Nova Mensagem -> Alerta In-App e Push
  */
-export const onNewMessagePush = functions.firestore
+export const onNewMessageNotify = functions.firestore
     .document('conversations/{conversationId}/messages/{messageId}')
     .onCreate(async (snap, context) => {
         const msg = snap.data();
         if (!msg || msg.senderId === 'system') return null;
 
         const { conversationId } = context.params;
-        
-        // Busca a conversa para identificar o destinatário
         const convDoc = await admin.firestore().collection('conversations').doc(conversationId).get();
         const convData = convDoc.data();
         if (!convData) return null;
@@ -65,38 +40,86 @@ export const onNewMessagePush = functions.firestore
         const recipientId = (convData.participants as string[]).find(uid => uid !== msg.senderId);
         if (!recipientId) return null;
 
-        // Busca o nome de quem enviou
         const senderDoc = await admin.firestore().collection('users').doc(msg.senderId).get();
-        const senderName = senderDoc.data()?.username || "Alguém";
+        const sender = senderDoc.data();
 
-        const pushTitle = "Néos: Nova Mensagem";
-        const pushBody = `${senderName}: ${msg.text || '📷 Enviou uma foto/vídeo'}`;
+        // 1. Notificação In-App (Banner)
+        await admin.firestore().collection('notifications_in_app').add({
+            recipientId,
+            title: 'Nova Mensagem',
+            body: `${sender?.username || 'Alguém'}: ${msg.text || 'Mídia enviada'}`,
+            type: 'message',
+            read: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
 
-        return sendPushNotification(recipientId, pushTitle, pushBody, {
-            type: 'CHAT',
-            conversationId: conversationId
+        // 2. Push Externo
+        return sendPushNotification(recipientId, "Néos: Nova Mensagem", `${sender?.username}: ${msg.text || 'Mídia'}`, { type: 'CHAT', conversationId });
+    });
+
+/**
+ * Gatilho: Curtida em Publicação -> Coração (Bolinha Roxa)
+ */
+export const onPostLikeNotify = functions.firestore
+    .document('posts/{postId}')
+    .onUpdate(async (change, context) => {
+        const newData = change.after.data();
+        const oldData = change.before.data();
+        if (newData.likes.length <= oldData.likes.length) return null;
+
+        const likerId = newData.likes[newData.likes.length - 1];
+        if (likerId === newData.userId) return null;
+
+        const likerDoc = await admin.firestore().collection('users').doc(likerId).get();
+        const liker = likerDoc.data();
+
+        return admin.firestore().collection('users').doc(newData.userId).collection('notifications').add({
+            type: 'like_post',
+            fromUserId: likerId,
+            fromUsername: liker?.username || 'Alguém',
+            fromUserAvatar: liker?.avatar || '',
+            read: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
     });
 
 /**
- * Gatilho: Nova Chamada de Vídeo ou Voz
+ * Gatilho: Nova Chamada -> Alerta In-App e Push
  */
-export const onNewCallPush = functions.firestore
+export const onNewCallNotify = functions.firestore
     .document('calls/{callId}')
     .onCreate(async (snap, context) => {
         const call = snap.data();
-        // Dispara o push apenas se o status for 'ringing' (início da chamada)
         if (!call || call.status !== 'ringing') return null;
 
-        const callerName = call.callerUsername || "Alguém";
-        const callTypeLabel = call.type === 'video' ? 'Vídeo' : 'Voz';
+        await admin.firestore().collection('notifications_in_app').add({
+            recipientId: call.receiverId,
+            title: `Chamada de ${call.type === 'video' ? 'Vídeo' : 'Voz'}`,
+            body: `${call.callerUsername} está ligando...`,
+            type: 'call',
+            read: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
 
-        const pushTitle = `Chamada de ${callTypeLabel}`;
-        const pushBody = `${callerName} está ligando para você...`;
+        return sendPushNotification(call.receiverId, "Néos: Chamada", `${call.callerUsername} chamando...`, { type: 'CALL', callId: context.params.callId });
+    });
 
-        return sendPushNotification(call.receiverId, pushTitle, pushBody, {
-            type: 'CALL',
-            callId: context.params.callId,
-            isVideo: call.type === 'video'
+/**
+ * Gatilho: Novo Seguidor -> Coração
+ */
+export const onNewFollowerNotify = functions.firestore
+    .document('users/{userId}/followers/{followerId}')
+    .onCreate(async (snap, context) => {
+        const { userId, followerId } = context.params;
+        const followerDoc = await admin.firestore().collection('users').doc(followerId).get();
+        const follower = followerDoc.data();
+
+        return admin.firestore().collection('users').doc(userId).collection('notifications').add({
+            type: 'follow',
+            fromUserId: followerId,
+            fromUsername: follower?.username || 'Alguém',
+            fromUserAvatar: follower?.avatar || '',
+            read: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
     });
