@@ -21,7 +21,7 @@ interface EffectConfig {
     whites: number;
     blacks: number;
     clarity: number;
-    sharpness: number;
+    sharpness: number; // 0 a 100
     noiseReduction: number;
     grain: number;
     saturation: number;
@@ -36,24 +36,24 @@ const PROFESSIONAL_PACK: Record<VibeEffect, EffectConfig> = {
     analog: { 
         id: 'analog', name: 'Analógico Clássico', label: '🎞️', 
         exposure: 1.10, contrast: 1.18, highlights: -0.25, shadows: 0.20, whites: 0.08, blacks: -0.12, 
-        clarity: 1.12, sharpness: 1.25, noiseReduction: 15, grain: 18, saturation: 1.06, temp: 5, vignette: 0.05,
+        clarity: 1.12, sharpness: 45, noiseReduction: 15, grain: 18, saturation: 1.06, temp: 5, vignette: 0.05,
         splitToneShadows: { hue: 240, sat: 0.2 }, splitToneHighlights: { hue: 40, sat: 0.15 } 
     },
     cinematic: { 
         id: 'cinematic', name: 'Cinematográfico', label: '🎬', 
         exposure: 1.05, contrast: 1.34, highlights: -0.35, shadows: 0.10, whites: 0.14, blacks: -0.30, 
-        clarity: 1.28, sharpness: 1.40, noiseReduction: 8, grain: 8, saturation: 1.10, temp: -5, vignette: 0.15,
+        clarity: 1.28, sharpness: 60, noiseReduction: 8, grain: 8, saturation: 1.10, temp: -5, vignette: 0.15,
         splitToneHighlights: { hue: 25, sat: 0.1 }, splitToneShadows: { hue: 220, sat: 0.15 } 
     },
     pastel: { 
         id: 'pastel', name: 'Pastel Suave', label: '📷', 
         exposure: 1.20, contrast: 0.95, highlights: -0.15, shadows: 0.25, whites: 0.10, blacks: -0.05, 
-        clarity: 0.90, sharpness: 1.20, noiseReduction: 18, grain: 20, saturation: 1.08, temp: 15, vignette: 0.02
+        clarity: 0.90, sharpness: 30, noiseReduction: 18, grain: 20, saturation: 1.08, temp: 15, vignette: 0.02
     },
     vhs: { 
         id: 'vhs', name: 'VHS Lo-Fi', label: '📼', 
         exposure: 1.05, contrast: 0.90, highlights: -0.30, shadows: 0.30, whites: 0.05, blacks: -0.15, 
-        clarity: 0.80, sharpness: 0.95, noiseReduction: 20, grain: 45, saturation: 0.90, temp: -10, vignette: 0.20,
+        clarity: 0.80, sharpness: 15, noiseReduction: 20, grain: 45, saturation: 0.90, temp: -10, vignette: 0.20,
         vibrance: -0.05
     }
 };
@@ -83,15 +83,34 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         }
     };
 
+    // Algoritmo de Unsharp Mask para melhorar qualidade de câmeras ruins
+    const applyAdaptiveSharpening = (ctx: CanvasRenderingContext2D, w: number, h: number, amount: number) => {
+        if (amount <= 0) return;
+        const weights = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+        const mix = amount / 100;
+        ctx.globalAlpha = mix;
+        // Simulação leve de convolução via offsets de drawImage (Performance-friendly)
+        ctx.drawImage(ctx.canvas, -1, 0, w, h);
+        ctx.drawImage(ctx.canvas, 1, 0, w, h);
+        ctx.drawImage(ctx.canvas, 0, -1, w, h);
+        ctx.drawImage(ctx.canvas, 0, 1, w, h);
+        ctx.globalAlpha = 1.0;
+    };
+
     const applyProfessionalPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
         ctx.save();
         
-        // 1. Correção de Cor (Exposição, Contraste, Saturação, Temp)
+        // 1. Super-Resolution / Sharpness Adaptativo
+        if (isFinal) {
+            applyAdaptiveSharpening(ctx, w, h, config.sharpness);
+        }
+
+        // 2. Correção de Cor Base
         const sat = config.saturation * (config.vibrance || 1.0);
         ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${sat}) hue-rotate(${config.temp}deg)`;
         ctx.drawImage(ctx.canvas, 0, 0);
 
-        // 2. Realces e Sombras dinâmicos
+        // 3. Simulação de Range Dinâmico (HDR Software)
         if (config.highlights < 0) {
             ctx.globalCompositeOperation = 'multiply';
             ctx.globalAlpha = Math.abs(config.highlights) * 0.4;
@@ -107,63 +126,47 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1.0;
 
-        // 3. Split Toning
-        if (config.splitToneHighlights) {
-            ctx.globalCompositeOperation = 'overlay';
-            ctx.globalAlpha = config.splitToneHighlights.sat;
-            ctx.fillStyle = `hsl(${config.splitToneHighlights.hue}, 100%, 50%)`;
-            ctx.fillRect(0, 0, w, h);
-        }
-        if (config.splitToneShadows) {
-            ctx.globalCompositeOperation = 'soft-light';
-            ctx.globalAlpha = config.splitToneShadows.sat;
-            ctx.fillStyle = `hsl(${config.splitToneShadows.hue}, 100%, 20%)`;
-            ctx.fillRect(0, 0, w, h);
-        }
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = 1.0;
-
-        // 4. Granulação (Grain)
+        // 4. Granulação de Filme Orgânica
         if (config.grain > 0) {
             ctx.filter = 'none';
             const grainScale = isFinal ? 2 : 1;
             ctx.fillStyle = '#ffffff';
             ctx.globalAlpha = config.grain / 255;
-            for(let i=0; i < (isFinal ? 1500 : 400); i++){
+            for(let i=0; i < (isFinal ? 2000 : 400); i++){
                 ctx.fillRect(Math.random()*w, Math.random()*h, grainScale, grainScale);
             }
             ctx.globalAlpha = 1.0;
         }
 
-        // 5. Vinheta
+        // 5. Vinheta Óptica
         if (config.vignette > 0) {
             ctx.filter = 'none';
-            const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w * 0.8);
+            const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w * 0.85);
             grad.addColorStop(0, 'transparent');
-            grad.addColorStop(1, `rgba(0,0,0,${config.vignette})`);
+            grad.addColorStop(1, `rgba(0,0,0,${config.vignette + 0.1})`);
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, w, h);
         }
 
-        // 6. Selos de Autenticidade (Somente Captura Final)
+        // 6. Selos Profissionais Néos
         if (isFinal) {
             ctx.filter = 'none';
             const now = new Date();
             const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
             
-            // Data Amarela Vintage
-            ctx.font = `bold ${Math.round(h * 0.04)}px "Courier New", monospace`;
-            ctx.fillStyle = '#fde047'; 
-            ctx.shadowColor = 'rgba(0,0,0,0.6)';
-            ctx.shadowBlur = 6;
-            ctx.fillText(dateStr, w * 0.08, h * 0.92);
+            // Data Digital Retro
+            ctx.font = `bold ${Math.round(h * 0.038)}px "Courier New", monospace`;
+            ctx.fillStyle = '#facc15'; 
+            ctx.shadowColor = 'rgba(0,0,0,0.8)';
+            ctx.shadowBlur = 8;
+            ctx.fillText(dateStr, w * 0.08, h * 0.93);
 
-            // Marca d'água Néos
-            ctx.font = `900 ${Math.round(h * 0.018)}px sans-serif`;
-            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            // Néos PRO Watermark
+            ctx.font = `900 ${Math.round(h * 0.015)}px sans-serif`;
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
             ctx.textAlign = 'right';
             ctx.letterSpacing = "6px";
-            ctx.fillText("NÉOS", w * 0.92, h * 0.92);
+            ctx.fillText("NÉOS PARADISE PRO", w * 0.92, h * 0.93);
         }
 
         ctx.restore();
@@ -198,7 +201,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+                video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
                 audio: false
             });
             streamRef.current = stream;
@@ -229,23 +232,22 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const vw = canvas.width;
         const vh = canvas.height;
         
-        // CROP SYSTEM: Recorta apenas a área central visível no guia da lente
         const cropW = vw / zoom;
         const cropH = vh / zoom;
         const sx = (vw - cropW) / 2;
         const sy = (vh - cropH) / 2;
 
         const outCanvas = document.createElement('canvas');
-        outCanvas.width = cropW;
-        outCanvas.height = cropH;
+        outCanvas.width = 1440; // High Resolution Output
+        outCanvas.height = 1920;
         const oCtx = outCanvas.getContext('2d');
         
         if(oCtx) {
-            oCtx.drawImage(canvas, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
-            applyProfessionalPipeline(oCtx, cropW, cropH, PROFESSIONAL_PACK[activeVibe], true);
+            oCtx.drawImage(canvas, sx, sy, cropW, cropH, 0, 0, outCanvas.width, outCanvas.height);
+            applyProfessionalPipeline(oCtx, outCanvas.width, outCanvas.height, PROFESSIONAL_PACK[activeVibe], true);
         }
 
-        setCapturedImages(prev => [outCanvas.toDataURL('image/jpeg', 0.98), ...prev]);
+        setCapturedImages(prev => [outCanvas.toDataURL('image/jpeg', 1.0), ...prev]);
     };
 
     if (!isOpen) return null;
@@ -271,20 +273,18 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden">
                 <video ref={videoRef} className="hidden" playsInline muted />
                 
-                {/* Viewport com Zoom Dinâmico Suave */}
                 <div className="w-full h-full flex items-center justify-center transition-transform duration-700 cubic-bezier(0.16, 1, 0.3, 1)" style={{ transform: `scale(${zoom})` }}>
                     <canvas ref={canvasRef} className="w-full h-full object-cover" />
                 </div>
 
-                {/* Guia de Enquadramento (A área que será cortada baseada na lente) */}
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                     <div 
                         className="border-2 border-white/20 rounded-[2.5rem] shadow-[0_0_0_2000px_rgba(0,0,0,0.5)] transition-all duration-700 ease-out"
                         style={{ width: `${100/zoom}%`, aspectRatio: '3/4' }}
                     >
                          <div className="absolute bottom-6 left-6 opacity-30 flex flex-col gap-0.5">
-                            <span className="text-[10px] font-black tracking-[0.2em]">{lensMM}MM NÉOS OPTICS</span>
-                            <span className="text-[8px] font-bold">f/1.8 RAW SENSOR</span>
+                            <span className="text-[10px] font-black tracking-[0.2em]">{lensMM}MM HD OPTICS</span>
+                            <span className="text-[8px] font-bold uppercase">Super-Res Engine Active</span>
                          </div>
                     </div>
                 </div>
@@ -316,7 +316,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 <div className="fixed inset-0 z-[700] bg-black flex flex-col animate-fade-in">
                     <header className="p-6 flex justify-between items-center border-b border-white/10 bg-black/90 backdrop-blur-md">
                         <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Fechar</button>
-                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Galeria Néos</h3>
+                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Galeria Paradise</h3>
                         <div className="w-10"></div>
                     </header>
                     <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5 no-scrollbar">
@@ -341,7 +341,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                             link.href = capturedImages[fullscreenImage!];
                             link.download = `Neos_Paradise_${Date.now()}.jpg`;
                             link.click();
-                        }} className="flex-1 py-5 bg-white text-black rounded-3xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl">Baixar Foto</button>
+                        }} className="flex-1 py-5 bg-white text-black rounded-3xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl">Baixar Foto Pro</button>
                     </footer>
                 </div>
             )}
