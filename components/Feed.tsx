@@ -42,7 +42,7 @@ const Feed: React.FC = () => {
   const [targetUserForMessages, setTargetUserForMessages] = useState<any>(null);
   const [targetConversationId, setTargetConversationId] = useState<string | null>(null);
   
-  // ESTADO ELEVADO PARA PERSISTÊNCIA DAS IMAGENS CONVERTIDAS
+  // ESTADO PERSISTENTE PARA AS IMAGENS JÁ CONVERTIDAS
   const [selectedMedia, setSelectedMedia] = useState<any[]>([]);
 
   const currentUser = auth.currentUser;
@@ -109,17 +109,19 @@ const Feed: React.FC = () => {
     }
   };
 
-  // FUNÇÃO DE CONFIRMAÇÃO: Persiste as imagens já processadas (JPEG/Blobs) no estado global
+  // FUNÇÃO CRÍTICA: Salva no estado global e abre o editor APÓS a conversão feita na galeria
   const handleImagesConfirmed = (imgs: any[]) => {
       setSelectedMedia([...imgs]);
       setIsGalleryOpen(false);
-      // Timeout seguro para garantir que a transição de modais não interrompa a renderização
-      setTimeout(() => setIsCreatePostOpen(true), 50);
+      // Pequeno timeout para o ciclo do React fechar um modal antes de montar o outro
+      setTimeout(() => {
+          setIsCreatePostOpen(true);
+      }, 50);
   };
 
   const handleCloseCreatePost = () => {
       setIsCreatePostOpen(false);
-      // Limpa os Blobs da memória ao encerrar o fluxo de publicação
+      // Limpeza de memória
       selectedMedia.forEach(m => {
           if (m.preview && m.preview.startsWith('blob:')) {
               URL.revokeObjectURL(m.preview);

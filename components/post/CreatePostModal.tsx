@@ -29,7 +29,7 @@ interface CreatePostModalProps {
 const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPostCreated, initialImages }) => {
     const { t } = useLanguage();
     
-    // Sincroniza o estado interno com as imagens recebidas
+    // Sincronização robusta com o estado de imagens convertidas
     const [mediaList, setMediaList] = useState<GalleryImage[]>([]);
     const [caption, setCaption] = useState('');
     const [submitting, setSubmitting] = useState(false);
@@ -43,13 +43,13 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
     useEffect(() => {
         if (isOpen) {
             if (initialImages && initialImages.length > 0) {
-                // Atualiza o preview local com a referência estável vinda do Feed.tsx
+                // Sincroniza imediatamente o preview local com o Blob URL persistente e compatível
                 setMediaList([...initialImages]);
             }
             fetchWeather();
         } else { 
+            // Reset de campos de texto ao fechar
             setCaption(''); 
-            setMediaList([]);
             setIsFriendsOnly(false); 
             setCloseFriendsIds([]); 
             setWeatherData(null);
@@ -121,6 +121,7 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
     return (
         <div className="fixed inset-0 bg-black/95 z-[100] flex flex-col md:p-10 overflow-hidden animate-fade-in">
             <div className="w-full h-full max-w-5xl mx-auto bg-white dark:bg-zinc-950 md:rounded-[3rem] flex flex-col md:flex-row overflow-hidden shadow-2xl">
+                {/* PREVIEW DA IMAGEM CONVERTIDA */}
                 <div className="relative w-full md:w-[60%] aspect-square md:aspect-auto bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border-r dark:border-zinc-800">
                     {mediaList.length > 0 ? (
                         <img 
@@ -130,7 +131,7 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
                         />
                     ) : (
                         <div className="animate-pulse w-full h-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center">
-                            <span className="text-xs font-black uppercase text-zinc-500">Recuperando Imagem...</span>
+                            <span className="text-xs font-black uppercase text-zinc-500 tracking-tighter">Preparando Imagem...</span>
                         </div>
                     )}
                     
