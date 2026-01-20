@@ -39,17 +39,17 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
     const [viewLimit, setViewLimit] = useState('');
     const [isMusicModalOpen, setIsMusicModalOpen] = useState(false);
     
-    // Atualiza o estado local IMEDIATAMENTE ao abrir o modal com novas imagens
+    // CARREGAMENTO INSTANTÂNEO DAS IMAGENS CONVERTIDAS
     useEffect(() => {
         if (isOpen) {
             if (initialImages && initialImages.length > 0) {
+                // Sincroniza o estado local imediatamente com as URLs convertidas (Blobs) persistentes
                 setMediaList([...initialImages]);
             }
             fetchWeather();
         } else { 
-            // Limpa o estado apenas quando fecha definitivamente
+            // Limpa estados de UI, mas mantém o mediaList para evitar flashes visuais no encerramento
             setCaption(''); 
-            setMediaList([]);
             setIsFriendsOnly(false); 
             setCloseFriendsIds([]); 
             setWeatherData(null);
@@ -83,7 +83,7 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
         setSubmitting(true);
         try {
             const urls = await Promise.all(mediaList.map(async (item, idx) => {
-                const fileName = item.file instanceof File ? item.file.name : `image-${idx}.jpg`;
+                const fileName = item.file instanceof File ? item.file.name : `image-${idx}-${Date.now()}.jpg`;
                 const path = `posts/${auth.currentUser?.uid}/${Date.now()}-${fileName}`;
                 const ref = storageRef(storage, path);
                 await uploadBytes(ref, item.file);
@@ -110,8 +110,10 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
             });
 
             onPostCreated();
-            onClose();
-        } catch (e) { console.error(e); } finally { setSubmitting(false); }
+        } catch (e) { 
+            console.error(e); 
+            setSubmitting(false);
+        }
     };
 
     if (!isOpen) return null;
@@ -119,12 +121,17 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
     return (
         <div className="fixed inset-0 bg-black/95 z-[100] flex flex-col md:p-10 overflow-hidden animate-fade-in">
             <div className="w-full h-full max-w-5xl mx-auto bg-white dark:bg-zinc-950 md:rounded-[3rem] flex flex-col md:flex-row overflow-hidden shadow-2xl">
+                {/* PREVIEW DA IMAGEM - UTILIZA A URL CONVERTIDA PERSISTENTE */}
                 <div className="relative w-full md:w-[60%] aspect-square md:aspect-auto bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border-r dark:border-zinc-800">
                     {mediaList.length > 0 ? (
-                        <img src={mediaList[0].preview} className="w-full h-full object-contain" alt="Preview" />
+                        <img 
+                            src={mediaList[0].preview} 
+                            className="w-full h-full object-contain animate-fade-in" 
+                            alt="Preview" 
+                        />
                     ) : (
                         <div className="animate-pulse w-full h-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center">
-                            <span className="text-xs font-black uppercase text-zinc-500">Preparando preview...</span>
+                            <span className="text-xs font-black uppercase text-zinc-500">Recuperando Imagem...</span>
                         </div>
                     )}
                     
@@ -150,8 +157,8 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose, onPo
 
                 <div className="flex-grow flex flex-col p-6 overflow-y-auto bg-white dark:bg-zinc-950">
                     <header className="flex justify-between items-center mb-8">
-                        <button onClick={onClose} className="text-2xl">&times;</button>
-                        <Button onClick={handleSubmit} disabled={submitting || mediaList.length === 0} className="!w-auto !py-2 !px-6 !rounded-full">
+                        <button onClick={onClose} className="text-2xl hover:scale-110 active:scale-90 transition-transform">&times;</button>
+                        <Button onClick={handleSubmit} disabled={submitting || mediaList.length === 0} className="!w-auto !py-2 !px-6 !rounded-full !font-black !uppercase !tracking-widest">
                             {submitting ? '...' : 'Postar'}
                         </Button>
                     </header>

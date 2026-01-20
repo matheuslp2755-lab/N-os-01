@@ -42,7 +42,7 @@ const Feed: React.FC = () => {
   const [targetUserForMessages, setTargetUserForMessages] = useState<any>(null);
   const [targetConversationId, setTargetConversationId] = useState<string | null>(null);
   
-  // ESTADO ELEVADO PARA PERSISTÊNCIA DAS IMAGENS
+  // ESTADO PERSISTENTE PARA AS IMAGENS CONVERTIDAS
   const [selectedMedia, setSelectedMedia] = useState<any[]>([]);
 
   const currentUser = auth.currentUser;
@@ -109,12 +109,25 @@ const Feed: React.FC = () => {
     }
   };
 
+  // FUNÇÃO DE CONFIRMAÇÃO DE IMAGENS - CONVERTE E PERSISTE ANTES DE NAVEGAR
   const handleImagesConfirmed = (imgs: any[]) => {
-      // Garante que o estado seja atualizado antes de abrir o modal de post
       setSelectedMedia([...imgs]);
       setIsGalleryOpen(false);
-      // Timeout para garantir sincronia do ciclo de renderização
-      setTimeout(() => setIsCreatePostOpen(true), 50);
+      // Timeout seguro para o ciclo de vida do React abrir o próximo modal com o estado já pronto
+      setTimeout(() => {
+          setIsCreatePostOpen(true);
+      }, 100);
+  };
+
+  const handleCloseCreatePost = () => {
+      setIsCreatePostOpen(false);
+      // Limpa os blobs da memória quando o fluxo termina completamente
+      selectedMedia.forEach(m => {
+          if (m.preview && m.preview.startsWith('blob:')) {
+              URL.revokeObjectURL(m.preview);
+          }
+      });
+      setSelectedMedia([]);
   };
 
   return (
@@ -186,12 +199,13 @@ const Feed: React.FC = () => {
       <MessagesModal isOpen={isMessagesOpen} onClose={() => setIsMessagesOpen(false)} initialTargetUser={targetUserForMessages} initialConversationId={targetConversationId} />
       {viewingPulseGroup && <PulseViewerModal isOpen={!!viewingPulseGroup} pulses={viewingPulseGroup.pulses} authorInfo={viewingPulseGroup.author} initialPulseIndex={0} onClose={() => setViewingPulseGroup(null)} onDelete={() => {}} />}
       
+      {/* GALLERY E CREATE POST COMPARTILHANDO ESTADO ELEVADO */}
       <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={handleImagesConfirmed} />
       
       <CreatePostModal 
         isOpen={isCreatePostOpen} 
-        onClose={() => { setIsCreatePostOpen(false); setSelectedMedia([]); }} 
-        onPostCreated={() => { setIsCreatePostOpen(false); setSelectedMedia([]); }} 
+        onClose={handleCloseCreatePost} 
+        onPostCreated={handleCloseCreatePost} 
         initialImages={selectedMedia} 
       />
       
