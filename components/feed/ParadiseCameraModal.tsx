@@ -205,15 +205,15 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         setShowFlashAnim(true);
         setTimeout(() => setShowFlashAnim(false), 100);
 
-        // O SEGREDO DO RECORTE:
+        // O SEGREDO DO RECORTE REAL:
         const zoom = getLensZoom(lensMM);
         const vw = canvas.width;
         const vh = canvas.height;
         
-        // Calculamos a largura que o usuário "vê" dentro da moldura arredondada
-        // A moldura ocupa 85% da largura da tela, mas aqui usamos a escala inversa do zoom
+        // A moldura visual é centralizada. Calculamos o retângulo de ORIGEM no canvas.
+        // Se a moldura na tela tem 85% de largura, o recorte deve seguir essa proporção 3:4.
         const sourceWidth = vw / zoom;
-        const sourceHeight = sourceWidth * (4/3); // Proporção fixa 3:4 da moldura
+        const sourceHeight = sourceWidth * (4/3); // Proporção da moldura 3:4
 
         const sx = (vw - sourceWidth) / 2;
         const sy = (vh - sourceHeight) / 2;
@@ -224,7 +224,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const oCtx = outCanvas.getContext('2d');
         
         if (oCtx) {
-            // Desenhamos APENAS a região central (janela de zoom) no canvas final
+            // AQUI ESTAVA O ERRO: Precisamos passar os parâmetros de origem (sx, sy, sw, sh)
+            // para o drawImage pegar só o meio.
             oCtx.drawImage(canvas, sx, sy, sourceWidth, sourceHeight, 0, 0, 1080, 1440);
             applyAIPipeline(oCtx, 1080, 1440, CAMERA_ENGINE_PACKS[activeVibe], true);
             setCapturedMedia(prev => [{url: outCanvas.toDataURL('image/jpeg', 0.9), type: 'photo'}, ...prev]);
@@ -276,7 +277,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden" onMouseDown={handleFocus} onTouchStart={handleFocus}>
                 <video ref={videoRef} className="hidden" playsInline muted />
                 
-                {/* Visualização centralizada com o zoom da lente */}
+                {/* Visualização centralizada com o zoom via CSS apenas para o usuário */}
                 <div className="w-full h-full flex items-center justify-center transition-transform duration-700 ease-in-out" style={{ transform: `scale(${currentZoom})` }}>
                     <canvas ref={canvasRef} className="w-full h-full object-cover" />
                 </div>
@@ -291,7 +292,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                     </div>
                 )}
 
-                {/* MOLDURA DE RECORTE REAL */}
+                {/* MOLDURA DE VISÃO REAL: O QUE ESTÁ AQUI DENTRO É O QUE SERÁ SALVO */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
                     <div 
                         className="border-4 border-white/40 rounded-[3rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)] transition-all duration-700"
@@ -305,7 +306,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                          )}
                          <div className="absolute bottom-6 left-6 opacity-40 flex flex-col gap-0.5">
                             <span className="text-[10px] font-black tracking-widest">{lensMM}MM AF ACTIVE</span>
-                            <span className="text-[8px] font-bold uppercase">RECORTE AUTOMÁTICO</span>
+                            <span className="text-[8px] font-bold uppercase tracking-widest">TRUE CROP ENGINE</span>
                          </div>
                     </div>
                 </div>
@@ -351,7 +352,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 <div className="fixed inset-0 z-[700] bg-black flex flex-col animate-fade-in">
                     <header className="p-6 flex justify-between items-center border-b border-white/10 bg-black/95">
                         <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Sair</button>
-                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Galeria do Paraíso</h3>
+                        <h3 className="font-black uppercase tracking-[0.3em] text-xs text-zinc-300">Film Roll</h3>
                         <div className="w-10"></div>
                     </header>
                     <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5">
