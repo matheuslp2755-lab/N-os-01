@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, collection, query, orderBy, limit, doc, updateDoc, arrayUnion, arrayRemove, getDoc, onSnapshot, addDoc, serverTimestamp } from '../../firebase';
+import { db, collection, query, orderBy, limit, doc, updateDoc, arrayUnion, arrayRemove, getDoc, onSnapshot, addDoc, serverTimestamp, deleteDoc } from '../../firebase';
 import { auth } from '../../firebase';
 import { useLanguage } from '../../context/LanguageContext';
 import { useCall } from '../../context/CallContext';
 import { GoogleGenAI } from "@google/genai";
 import { VerifiedBadge } from '../profile/UserProfile';
+import Button from '../common/Button';
 
 type VibeType = {
     id: string;
@@ -32,6 +33,7 @@ const VibeItem: React.FC<{ vibe: VibeType; isActive: boolean }> = ({ vibe, isAct
     const [newComment, setNewComment] = useState('');
     const [replyingTo, setReplyingTo] = useState<any | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     const [isTranslated, setIsTranslated] = useState(false);
     const [translatedText, setTranslatedText] = useState<string | null>(null);
@@ -40,6 +42,7 @@ const VibeItem: React.FC<{ vibe: VibeType; isActive: boolean }> = ({ vibe, isAct
 
     const currentUser = auth.currentUser;
     const isLiked = vibe.likes.includes(currentUser?.uid || '');
+    const isAuthor = currentUser?.uid === vibe.userId;
 
     useEffect(() => {
         const detect = async () => {
@@ -58,18 +61,27 @@ const VibeItem: React.FC<{ vibe: VibeType; isActive: boolean }> = ({ vibe, isAct
     }, [isActive, vibe.caption]);
 
     const handleTranslate = async () => {
-        if (isTranslated || translatedText) { setIsTranslated(!isTranslated); return; }
+        if (isTranslated) { setIsTranslated(false); return; }
+        if (translatedText) { setIsTranslated(true); return; }
+
         setIsTranslating(true);
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const textToTranslate = String(vibe.caption || "");
-            const res = await ai.models.generateContent({
+            const response = await ai.models.generateContent({
                 model: 'gemini-3-flash-preview',
-                contents: `Traduza para PT-BR de forma natural: "${textToTranslate}"`,
+                contents: `Traduza fielmente para Português do Brasil: "${vibe.caption}"`,
+                config: { systemInstruction: "Você é um tradutor expert de redes sociais." }
             });
-            setTranslatedText(res.text?.trim() || null);
-            setIsTranslated(true);
-        } catch (e) {} finally { setIsTranslating(false); }
+
+            if (response.text) {
+                setTranslatedText(response.text.trim());
+                setIsTranslated(true);
+            }
+        } catch (e: any) {
+            console.error("Translation error:", e);
+        } finally {
+            setIsTranslating(false);
+        }
     };
 
     useEffect(() => {
@@ -123,7 +135,17 @@ const VibeItem: React.FC<{ vibe: VibeType; isActive: boolean }> = ({ vibe, isAct
         await updateDoc(doc(db, 'vibes', vibe.id), { commentsCount: (vibe.commentsCount || 0) + 1 });
     };
 
-    const handleDownload = async () => {
+    const handleDelete = async () => {
+        if (!isAuthor) return;
+        try {
+            await deleteDoc(doc(db, 'vibes', vibe.id));
+            window.location.reload();
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const handleDownloadWithWatermark = async () => {
         if (isDownloading) return;
         setIsDownloading(true);
 
@@ -132,49 +154,39 @@ const VibeItem: React.FC<{ vibe: VibeType; isActive: boolean }> = ({ vibe, isAct
             const ctx = canvas?.getContext('2d');
             if (!canvas || !ctx) return;
 
-            const addWatermark = (context: CanvasRenderingContext2D, width: number, height: number) => {
-                context.font = "bold 24px sans-serif";
-                context.fillStyle = "rgba(255, 255, 255, 0.8)";
-                context.shadowColor = "rgba(0, 0, 0, 0.5)";
-                context.shadowBlur = 4;
-                
-                // Top Left
-                context.fillText("Powered by Néos", 20, 40);
-                
-                // Bottom Right
-                const text = "Powered by Néos";
-                const metrics = context.measureText(text);
-                context.fillText(text, width - metrics.width - 20, height - 20);
-            };
-
             if (vibe.mediaType === 'image') {
                 const img = new Image();
                 img.crossOrigin = "anonymous";
                 img.src = vibe.videoUrl;
                 await new Promise((res) => (img.onload = res));
+                
                 canvas.width = img.width;
                 canvas.height = img.height;
                 ctx.drawImage(img, 0, 0);
-                addWatermark(ctx, canvas.width, canvas.height);
+                
+                const fontSize = Math.max(20, canvas.width * 0.04);
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+                ctx.shadowColor = "rgba(0,0,0,0.5)";
+                ctx.shadowBlur = 10;
+                ctx.fillText("NÉOS VIBE", 40, canvas.height - 40);
+                ctx.fillText(`@${vibe.user?.username}`, 40, canvas.height - 40 - fontSize);
                 
                 const link = document.createElement('a');
-                link.download = `neos-vibe-${Date.now()}.jpg`;
+                link.download = `neos-vibe-${vibe.user?.username}.jpg`;
                 link.href = canvas.toDataURL('image/jpeg', 0.9);
                 link.click();
             } else {
-                // For videos, we download the raw source since client-side video watermarking 
-                // requires complex libraries like ffmpeg.js which are too heavy.
-                // However, as a visual solution, we'll fetch and trigger download.
                 const response = await fetch(vibe.videoUrl);
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const link = document.createElement('a');
                 link.href = url;
-                link.download = `neos-vibe-${Date.now()}.mp4`;
+                link.download = `neos-vibe-${vibe.user?.username}.mp4`;
                 link.click();
             }
         } catch (e) {
-            console.error("Download error", e);
+            console.error("Download failure", e);
         } finally {
             setIsDownloading(false);
         }
@@ -203,8 +215,8 @@ const VibeItem: React.FC<{ vibe: VibeType; isActive: boolean }> = ({ vibe, isAct
                     <span className="text-white text-xs font-black drop-shadow-md">{vibe.commentsCount}</span>
                 </button>
 
-                <button onClick={handleDownload} disabled={isDownloading} className="flex flex-col items-center group transition-all active:scale-95 disabled:opacity-50">
-                    <div className="p-3 bg-white/10 backdrop-blur-md rounded-full text-white shadow-xl border border-white/20 group-hover:bg-white/20 transition-colors">
+                <button onClick={handleDownloadWithWatermark} disabled={isDownloading} className="flex flex-col items-center">
+                    <div className="p-3 bg-white/10 backdrop-blur-md rounded-full text-white shadow-xl border border-white/20 active:scale-95 transition-all">
                         {isDownloading ? (
                              <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                         ) : (
@@ -213,6 +225,14 @@ const VibeItem: React.FC<{ vibe: VibeType; isActive: boolean }> = ({ vibe, isAct
                     </div>
                     <span className="text-white text-[10px] font-black mt-2 uppercase tracking-widest drop-shadow-lg">Salvar</span>
                 </button>
+
+                {isAuthor && (
+                    <button onClick={() => setShowDeleteConfirm(true)} className="flex flex-col items-center opacity-70 hover:opacity-100 transition-opacity">
+                        <div className="p-3 bg-red-500/20 backdrop-blur-md rounded-full text-red-500 border border-red-500/30">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </div>
+                    </button>
+                )}
 
                 <button onClick={() => setGlobalMuted(!isGlobalMuted)} className="p-2 bg-black/20 backdrop-blur-md rounded-full text-white">
                     {isGlobalMuted ? <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg> : <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>}
@@ -238,6 +258,19 @@ const VibeItem: React.FC<{ vibe: VibeType; isActive: boolean }> = ({ vibe, isAct
                     )}
                 </div>
             </div>
+
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-6" onClick={() => setShowDeleteConfirm(false)}>
+                    <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2.5rem] w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-xl font-black text-white mb-2 uppercase tracking-tighter">Excluir Vibe?</h3>
+                        <p className="text-zinc-500 text-sm mb-8">Esta ação não pode ser desfeita.</p>
+                        <div className="flex flex-col gap-3">
+                            <Button onClick={handleDelete} className="!bg-red-600 !py-4 !rounded-2xl !font-black !uppercase !tracking-widest">Excluir Agora</Button>
+                            <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-zinc-500 font-bold uppercase text-[10px] tracking-widest">Cancelar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showComments && (
                 <div className="fixed inset-0 z-50 bg-black/60 flex items-end animate-fade-in" onClick={() => setShowComments(false)}>

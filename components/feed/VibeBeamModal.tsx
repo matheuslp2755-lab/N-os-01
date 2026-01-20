@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { auth, db, doc, serverTimestamp, collection, query, where, onSnapshot, setDoc, deleteDoc, storage, storageRef, uploadBytes, getDownloadURL, addDoc, updateDoc } from '../../firebase';
+import { auth, db, doc, serverTimestamp, collection, query, where, getDocs, setDoc, deleteDoc, storage, storageRef, uploadBytes, getDownloadURL, addDoc, updateDoc, limit } from '../../firebase';
 import { useLanguage } from '../../context/LanguageContext';
 import Button from '../common/Button';
 
@@ -18,18 +18,13 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
     const [isSending, setIsSending] = useState(false);
     
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const pulseInterval = useRef<number | null>(null);
+    const radarInterval = useRef<number | null>(null);
     const currentUser = auth.currentUser;
 
-    const cleanup = async () => {
-        if (pulseInterval.current) {
-            window.clearInterval(pulseInterval.current);
-            pulseInterval.current = null;
-        }
-        if (currentUser) {
-            try {
-                await deleteDoc(doc(db, 'active_beams', currentUser.uid));
-            } catch (e) {}
+    const cleanup = () => {
+        if (radarInterval.current) {
+            window.clearInterval(radarInterval.current);
+            radarInterval.current = null;
         }
         setNearbyUsers([]);
         setSelectedPhoto(null);
@@ -54,53 +49,50 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
         if (!currentUser || !selectedPhoto) return;
         setStatus('searching');
         
-        const updatePresence = () => {
+        const scanNearby = () => {
             navigator.geolocation.getCurrentPosition(async (pos) => {
-                const beamData = {
-                    userId: currentUser.uid,
-                    username: currentUser.displayName,
-                    avatar: currentUser.photoURL,
-                    // Usamos uma precisão de 2 casas decimais (~1km) para agrupar usuários no mesmo local
-                    lat: Number(pos.coords.latitude.toFixed(2)), 
-                    lng: Number(pos.coords.longitude.toFixed(2)),
-                    lastPulse: Date.now()
-                };
+                const myLat = pos.coords.latitude;
+                const myLng = pos.coords.longitude;
 
-                // Atualizar no banco de Beams
-                await setDoc(doc(db, 'active_beams', currentUser.uid), beamData);
-                
-                // Também atualiza a localização geral do usuário para o Radar Perto normal
+                // Atualiza minha posição para que outros também me vejam se usarem o radar
                 await updateDoc(doc(db, 'users', currentUser.uid), {
-                    location: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+                    location: { lat: myLat, lng: myLng },
                     lastSeen: serverTimestamp()
                 });
 
-                listenForNearby(beamData);
+                // Busca usuários globais para filtrar por proximidade e atividade
+                // Nota: Em uma escala real usaríamos GeoFirestore, aqui simulamos via query simples + filtro JS
+                const q = query(collection(db, 'users'), limit(100));
+                const snap = await getDocs(q);
+                const now = Date.now() / 1000;
+
+                const found = snap.docs
+                    .map(d => ({ userId: d.id, ...d.data() } as any))
+                    .filter(u => {
+                        if (u.userId === currentUser.uid || !u.location || !u.lastSeen) return false;
+                        if (u.appearOnRadar === false) return false;
+
+                        // Filtro 1: Estar online nos últimos 5 minutos
+                        const isOnline = (now - u.lastSeen.seconds) < 300; 
+                        if (!isOnline) return false;
+
+                        // Filtro 2: Proximidade Geográfica (aprox 2km)
+                        const diffLat = Math.abs(u.location.lat - myLat);
+                        const diffLng = Math.abs(u.location.lng - myLng);
+                        return diffLat < 0.02 && diffLng < 0.02;
+                    });
+
+                setNearbyUsers(found);
             }, (err) => {
-                console.error("GPS Beam Error", err);
-                alert("Por favor, ative a localização para que o Beam encontre seus amigos.");
+                console.error("Beam GPS Error", err);
+                alert("Ative a localização para usar o Néos Beam.");
                 setStatus('off');
             }, { enableHighAccuracy: true });
         };
 
-        updatePresence();
-        pulseInterval.current = window.setInterval(updatePresence, 5000);
-    };
-
-    const listenForNearby = (myData: any) => {
-        const q = query(
-            collection(db, 'active_beams'),
-            where('lat', '==', myData.lat),
-            where('lng', '==', myData.lng)
-        );
-
-        const unsub = onSnapshot(q, (snapshot) => {
-            const now = Date.now();
-            const found = snapshot.docs
-                .map(d => d.data())
-                .filter(u => u.userId !== currentUser?.uid && (now - u.lastPulse < 20000)); // Usuários ativos nos últimos 20s
-            setNearbyUsers(found);
-        });
+        scanNearby();
+        // Atualiza a lista a cada 8 segundos enquanto o modal estiver aberto
+        radarInterval.current = window.setInterval(scanNearby, 8000);
     };
 
     const handleSendToUser = async (targetUser: any) => {
@@ -205,7 +197,7 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
                         
                         <div className="space-y-2">
                             <h2 className="text-4xl font-black text-white uppercase italic tracking-tighter">Néos Beam</h2>
-                            <p className="text-zinc-500 text-sm px-6 leading-relaxed font-medium">Selecione uma foto e ative o radar para encontrar quem está ao seu redor.</p>
+                            <p className="text-zinc-500 text-sm px-6 leading-relaxed font-medium">Envie fotos instantâneas para quem está ao seu redor agora.</p>
                         </div>
 
                         <Button 
@@ -231,8 +223,8 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
                         </div>
 
                         <div className="space-y-6">
-                            <h3 className="text-white font-black text-lg uppercase tracking-tighter">Quem está por perto?</h3>
-                            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.4em] animate-pulse">Detectando frequências...</p>
+                            <h3 className="text-white font-black text-lg uppercase tracking-tighter">Sinais Próximos</h3>
+                            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.4em] animate-pulse">Buscando usuários online...</p>
                             
                             <div className="flex flex-col gap-3 max-h-[35vh] overflow-y-auto no-scrollbar py-2">
                                 {nearbyUsers.length > 0 ? nearbyUsers.map(user => (
@@ -247,13 +239,13 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
                                         </div>
                                         <div className="flex-grow">
                                             <p className="text-white font-bold text-sm">@{user.username}</p>
-                                            <p className="text-[10px] text-sky-500 font-black uppercase tracking-widest">Enviar foto agora</p>
+                                            <p className="text-[10px] text-sky-500 font-black uppercase tracking-widest">Enviar por Beam</p>
                                         </div>
                                         <svg className="w-6 h-6 text-zinc-600 group-hover:text-sky-500 transition-all" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M13 10V3L4 14h7v7l9-11h-7z" strokeWidth={2}/></svg>
                                     </div>
                                 )) : (
                                     <div className="py-10 opacity-30">
-                                        <p className="text-white text-[10px] font-black uppercase tracking-widest">Nenhum sinal detectado...</p>
+                                        <p className="text-white text-[10px] font-black uppercase tracking-widest">Nenhum sinal online por perto...</p>
                                     </div>
                                 )}
                             </div>
@@ -275,7 +267,7 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
                         <div className="w-40 h-40 bg-sky-500 rounded-full flex items-center justify-center mx-auto shadow-[0_0_50px_rgba(14,165,233,0.5)]">
                             <svg className="w-20 h-20 text-white animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                         </div>
-                        <h3 className="text-2xl font-black text-white uppercase italic tracking-widest">Beam em progresso...</h3>
+                        <h3 className="text-2xl font-black text-white uppercase italic tracking-widest">Transmitindo...</h3>
                     </div>
                 )}
 
@@ -284,7 +276,7 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose, onSelect
                         <div className="w-40 h-40 bg-green-500 rounded-full flex items-center justify-center mx-auto shadow-[0_0_50px_rgba(34,197,94,0.3)]">
                             <svg className="w-20 h-20 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M5 13l4 4L19 7" /></svg>
                         </div>
-                        <h3 className="text-2xl font-black text-white uppercase italic tracking-tighter">Concluído!</h3>
+                        <h3 className="text-2xl font-black text-white uppercase italic tracking-tighter">Enviado com Sucesso!</h3>
                     </div>
                 )}
             </div>
