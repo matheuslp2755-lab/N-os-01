@@ -27,10 +27,13 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages, onOpenBrowser, hasUnread }) => {
     const { t } = useLanguage();
-    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
     const [isActivityDropdownOpen, setIsActivityDropdownOpen] = useState(false);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const currentUser = auth.currentUser;
+    const searchRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!currentUser) return;
@@ -39,6 +42,43 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
             setNotifications(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Notification)));
         });
     }, [currentUser]);
+
+    useEffect(() => {
+        if (searchQuery.trim() === '') {
+            setSearchResults([]);
+            return;
+        }
+        const delayDebounceFn = setTimeout(async () => {
+            setIsSearching(true);
+            try {
+                const q = query(
+                    collection(db, 'users'),
+                    where('username_lowercase', '>=', searchQuery.toLowerCase()),
+                    where('username_lowercase', '<=', searchQuery.toLowerCase() + '\uf8ff'),
+                    limit(5)
+                );
+                const querySnapshot = await getDocs(q);
+                const users = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setSearchResults(users);
+            } catch (err) {
+                console.error("Search error:", err);
+            } finally {
+                setIsSearching(false);
+            }
+        }, 300);
+        return () => clearTimeout(delayDebounceFn);
+    }, [searchQuery]);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+                setSearchQuery('');
+                setSearchResults([]);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     const markAllAsRead = async () => {
         if (!currentUser) return;
@@ -72,6 +112,29 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
             <div className="container mx-auto px-4 h-16 flex items-center justify-between max-w-5xl">
                 <div className="flex items-center gap-3">
                     <h1 onClick={onGoHome} className="text-3xl cursor-pointer font-black bg-gradient-to-r from-indigo-500 via-purple-600 to-pink-500 text-transparent bg-clip-text tracking-tighter italic">Néos</h1>
+                </div>
+
+                <div className="hidden md:flex flex-1 max-w-xs mx-4 relative" ref={searchRef}>
+                    <div className="w-full flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-xl px-3 py-1.5 border border-transparent focus-within:border-zinc-300 dark:focus-within:border-zinc-700 transition-all">
+                        <svg className="w-4 h-4 text-zinc-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        <input 
+                            type="text" 
+                            placeholder={t('header.searchPlaceholder')} 
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="bg-transparent w-full text-sm outline-none font-medium"
+                        />
+                    </div>
+                    {searchResults.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-zinc-950 border dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-fade-in">
+                            {searchResults.map(user => (
+                                <button key={user.id} onClick={() => { onSelectUser(user.id); setSearchQuery(''); setSearchResults([]); }} className="w-full flex items-center gap-3 p-3 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors text-left border-b last:border-0 dark:border-zinc-900">
+                                    <img src={user.avatar} className="w-8 h-8 rounded-full object-cover" />
+                                    <span className="text-sm font-bold flex items-center">{user.username} {user.isVerified && <VerifiedBadge className="w-3 h-3 ml-1" />}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 <nav className="flex items-center gap-3 sm:gap-4">
