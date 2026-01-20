@@ -60,11 +60,11 @@ const Feed: React.FC = () => {
   }, []);
 
   const handleEnablePush = () => {
+    // Acesso direto ao objeto global OneSignal garantido pelo script no head
     if (window.OneSignal) {
-      console.log("Néos: Disparando slidedown prompt...");
       window.OneSignal.showSlidedownPrompt().then(() => {
         setShowPushBanner(false);
-      }).catch((e: any) => console.error("OneSignal Error:", e));
+      });
     } else {
       window.OneSignalDeferred.push(async (OneSignal: any) => {
          await OneSignal.showSlidedownPrompt();
@@ -128,19 +128,18 @@ const Feed: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      {/* Banner de Ativação de Push Manual OBRIGATÓRIO */}
       {showPushBanner && (
-        <div className="fixed top-0 left-0 right-0 z-[1000] bg-indigo-600 p-3 text-center animate-fade-in shadow-2xl border-b border-white/10">
+        <div className="fixed top-0 left-0 right-0 z-[1000] bg-sky-600 p-3 text-center animate-fade-in shadow-xl">
           <div className="max-w-xl mx-auto flex items-center justify-between gap-4">
             <p className="text-white text-[10px] font-black uppercase tracking-widest text-left leading-tight">
-              Sinta a experiência completa.<br/>Ative as notificações!
+              Ative as notificações para receber atualizações em tempo real!
             </p>
             <div className="flex gap-2">
               <button 
                 onClick={handleEnablePush}
-                className="bg-white text-indigo-600 px-5 py-2 rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 active:scale-95 transition-all"
+                className="bg-white text-sky-600 px-5 py-2 rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 active:scale-95 transition-all"
               >
-                Ativar Agora
+                Ativar agora
               </button>
               <button onClick={() => setShowPushBanner(false)} className="text-white/40 hover:text-white p-2">&times;</button>
             </div>

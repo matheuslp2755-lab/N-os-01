@@ -43,17 +43,11 @@
         OneSignal.init({
           appId: "efd9d119-b1c7-40d6-944c-1b3d4b749aaa",
           notifyButton: { enable: false },
-          allowLocalhostAsSecureOrigin: true
+          allowLocalhostAsSecureOrigin: true,
+          serviceWorkerParam: { scope: "/" },
+          serviceWorkerPath: "OneSignalSDKWorker.js",
         });
       });
-
-      // DEBUG: Provar que o OneSignal carregou
-      setTimeout(() => {
-        console.log("Néos Debug - OneSignal Object:", window.OneSignal || "NOT LOADED");
-        if (window.OneSignal) {
-          console.log("Néos Debug - OneSignal Initialized:", OneSignal.isInitialized());
-        }
-      }, 5000);
     </script>
   </head>
   <body>
