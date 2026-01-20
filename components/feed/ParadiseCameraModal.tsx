@@ -24,18 +24,26 @@ interface EffectConfig {
     magenta?: number;
     glow?: number;
     skinSoft?: number;
+    vibrance?: number;
     isCustom?: boolean;
 }
 
-const DEFAULT_PRESETS: Record<string, EffectConfig> = {
-    party_flash: { id: 'party_flash', name: 'Party Flash', label: '🔥', exposure: 1.4, contrast: 1.12, saturation: 1.1, temp: -2, sharpness: 1.6, grain: 8, vignette: 0.14, glow: 0.3 },
-    neon_night: { id: 'neon_night', name: 'Neon Night', label: '🌈', exposure: 1.2, contrast: 1.18, saturation: 1.18, temp: -6, sharpness: 1.4, grain: 10, glow: 0.6, vignette: 0.1 },
-    dark_vibe: { id: 'dark_vibe', name: 'Dark Vibe', label: '💜', exposure: 0.8, contrast: 1.24, saturation: 1.06, temp: -4, magenta: 3, sharpness: 1.1, grain: 12, vignette: 0.22 },
+const PREMIUM_PACK: Record<string, EffectConfig> = {
+    beauty_glow: { id: 'beauty_glow', name: 'Neos Beauty Glow', label: '✨', exposure: 1.4, contrast: 1.1, saturation: 1.08, vibrance: 1.15, temp: 10, magenta: 0, sharpness: 1.0, grain: 0, skinSoft: 0.8, glow: 0.4, vignette: 0.05 },
+    sharp_boy: { id: 'sharp_boy', name: 'Neos Sharp Boy', label: '👔', exposure: 1.3, contrast: 1.15, saturation: 1.05, vibrance: 1.0, temp: 0, magenta: 0, sharpness: 1.8, grain: 0, skinSoft: 0.3, glow: 0.2, vignette: 0.08 },
+    sunset_paradise: { id: 'sunset_paradise', name: 'Neos Sunset Paradise', label: '🌅', exposure: 1.4, contrast: 1.15, saturation: 1.2, vibrance: 1.25, temp: 25, magenta: 5, sharpness: 1.2, grain: 0, skinSoft: 0.4, glow: 0.5, vignette: 0.05 },
+    night_shine: { id: 'night_shine', name: 'Neos Night Shine', label: '🌃', exposure: 1.3, contrast: 1.2, saturation: 1.15, vibrance: 1.2, temp: 5, magenta: 0, sharpness: 1.3, grain: 5, skinSoft: 0.3, glow: 0.4, vignette: 0.12 },
+    golden_hour: { id: 'golden_hour', name: 'Neos Golden Hour Pro', label: '🌞', exposure: 1.3, contrast: 1.1, saturation: 1.1, vibrance: 1.15, temp: 18, magenta: 3, sharpness: 1.5, grain: 0, skinSoft: 0.6, glow: 0.4, vignette: 0.05 },
+    cinematic_vibe: { id: 'cinematic_vibe', name: 'Neos Cinematic Vibe', label: '🎬', exposure: 0.9, contrast: 0.9, saturation: 0.9, vibrance: 1.0, temp: -15, magenta: 0, sharpness: 1.1, grain: 15, skinSoft: 0.1, glow: 0.3, vignette: 0.15 },
+    asterix_pop: { id: 'asterix_pop', name: 'Neos Asterix Pop', label: '💥', exposure: 1.2, contrast: 1.15, saturation: 1.2, vibrance: 1.25, temp: 8, magenta: 0, sharpness: 1.5, grain: 0, skinSoft: 0.0, glow: 0.3, vignette: 0.08 },
+    elegant_pro: { id: 'elegant_pro', name: 'Neos Elegant Pro', label: '💎', exposure: 1.1, contrast: 1.2, saturation: 0.95, vibrance: 1.0, temp: -5, magenta: 0, sharpness: 1.7, grain: 0, skinSoft: 0.2, glow: 0.1, vignette: 0.1 },
+    vibrant_party: { id: 'vibrant_party', name: 'Neos Vibrant Party', label: '🎉', exposure: 1.3, contrast: 1.2, saturation: 1.25, vibrance: 1.3, temp: 0, magenta: 0, sharpness: 1.4, grain: 0, skinSoft: 0.1, glow: 0.5, vignette: 0.05 },
+    mood_blue: { id: 'mood_blue', name: 'Neos Mood Blue', label: '❄️', exposure: 1.1, contrast: 1.1, saturation: 0.9, vibrance: 0.95, temp: -20, magenta: -5, sharpness: 1.3, grain: 10, skinSoft: 0.0, glow: 0.4, vignette: 0.12 }
 };
 
 const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClose }) => {
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-    const [activeVibe, setActiveVibe] = useState<VibeEffect>('party_flash');
+    const [activeVibe, setActiveVibe] = useState<VibeEffect>('beauty_glow');
     const [lensMM, setLensMM] = useState<LensMM>(35);
     const [flashOn, setFlashOn] = useState(false);
     const [capturedImages, setCapturedImages] = useState<string[]>([]);
@@ -44,7 +52,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const [showFlashAnim, setShowFlashAnim] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
-    // Custom Filter State
     const [customFilters, setCustomFilters] = useState<EffectConfig[]>([]);
     const [isCreatingFilter, setIsCreatingFilter] = useState(false);
     const [activeEditTool, setActiveEditTool] = useState<string | null>(null);
@@ -62,37 +69,70 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         if (saved) setCustomFilters(JSON.parse(saved));
     }, []);
 
-    const allPresets = { ...DEFAULT_PRESETS, ...Object.fromEntries(customFilters.map(f => [f.id, f])) };
+    const allPresets = { ...PREMIUM_PACK, ...Object.fromEntries(customFilters.map(f => [f.id, f])) };
     const getZoomFactor = (mm: LensMM) => ({ 24: 1.0, 35: 1.3, 50: 1.8, 85: 2.6 }[mm]);
 
     const applyQualityPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
         ctx.filter = 'none';
-        const hue = config.temp + (config.magenta || 0);
-        const sat = config.saturation;
-        const filterStr = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${sat}) hue-rotate(${hue}deg) blur(${1 - (config.sharpness / 2.5)}px)`;
+        
+        // 1. Processamento Base (Cor e Luz)
+        const hue = (config.temp || 0) + (config.magenta || 0);
+        const sat = (config.saturation || 1.0) * (config.vibrance || 1.0);
+        const br = config.exposure || 1.0;
+        const ct = config.contrast || 1.0;
+        
+        ctx.filter = `brightness(${br}) contrast(${ct}) saturate(${sat}) hue-rotate(${hue}deg)`;
         
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = w; tempCanvas.height = h;
         const tCtx = tempCanvas.getContext('2d');
         if(tCtx) {
-            tCtx.filter = filterStr;
             tCtx.drawImage(ctx.canvas, 0, 0);
             ctx.clearRect(0, 0, w, h);
             ctx.drawImage(tempCanvas, 0, 0);
         }
+        ctx.filter = 'none';
 
+        // 2. Nitidez e Suavização de Pele
+        if (config.skinSoft && config.skinSoft > 0) {
+            ctx.save();
+            ctx.globalAlpha = config.skinSoft * 0.3;
+            ctx.filter = `blur(${Math.round(w * 0.005)}px)`;
+            ctx.drawImage(ctx.canvas, 0, 0);
+            ctx.restore();
+        }
+
+        // 3. Efeito Glow (Luzes Difusas)
+        if (config.glow && config.glow > 0) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            ctx.globalAlpha = config.glow * 0.4;
+            ctx.filter = `blur(${Math.round(w * 0.03)}px) brightness(1.2)`;
+            ctx.drawImage(ctx.canvas, 0, 0);
+            ctx.restore();
+        }
+
+        // 4. Marca d'água Proporcional
         if (isFinal) {
             ctx.save();
-            const now = new Date();
-            const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
-            ctx.font = `bold ${Math.round(h * 0.035)}px monospace`;
-            ctx.fillStyle = '#facc15';
-            ctx.shadowColor = 'rgba(0,0,0,0.7)';
-            ctx.shadowBlur = 8;
-            ctx.fillText(dateStr, w * 0.08, h * 0.92);
-            ctx.font = `900 ${Math.round(h * 0.02)}px sans-serif`;
-            ctx.fillText("NÉOS PARADISE", w * 0.08, h * 0.88);
+            const fontSize = Math.round(h * 0.03);
+            ctx.font = `900 ${fontSize}px sans-serif`;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+            ctx.shadowBlur = 4;
+            ctx.textAlign = 'right';
+            ctx.letterSpacing = "4px";
+            ctx.fillText("NEOS", w - (w * 0.05), h - (h * 0.05));
             ctx.restore();
+        }
+
+        // 5. Vinheta
+        if (config.vignette && config.vignette > 0) {
+            const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w * 0.9);
+            grad.addColorStop(0, 'transparent');
+            grad.addColorStop(1, `rgba(0,0,0,${config.vignette})`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, w, h);
         }
     };
 
@@ -123,7 +163,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode, width: { ideal: 1080 }, height: { ideal: 1920 } },
+                video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
                 audio: false
             });
             streamRef.current = stream;
@@ -161,11 +201,11 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             const activeConfig = isCreatingFilter ? newFilter : allPresets[activeVibe];
             applyQualityPipeline(oCtx, outW, outH, activeConfig, true);
         }
-        setCapturedImages(prev => [outCanvas.toDataURL('image/jpeg', 0.95), ...prev]);
+        setCapturedImages(prev => [outCanvas.toDataURL('image/jpeg', 1.0), ...prev]);
     };
 
     const saveCustomFilter = () => {
-        const name = prompt("Qual o nome do seu efeito?", "Vibe Personalizada");
+        const name = prompt("Qual o nome do seu efeito?", "Meu Efeito Neos");
         if (!name) return;
         const filterToSave = { ...newFilter, name, id: `custom_${Date.now()}` };
         const updated = [...customFilters, filterToSave];
@@ -179,8 +219,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         { id: 'exposure', name: 'Luz', icon: '☀️', min: 0.5, max: 2.0, step: 0.05 },
         { id: 'contrast', name: 'Contraste', icon: '🌓', min: 0.5, max: 1.5, step: 0.05 },
         { id: 'sharpness', name: 'Nitidez', icon: '✨', min: 0.5, max: 2.5, step: 0.1 },
-        { id: 'temp', name: 'Tonalidade', icon: '🌡️', min: -40, max: 40, step: 1 },
-        { id: 'magenta', name: 'Matiz', icon: '🎨', min: -40, max: 40, step: 1 },
+        { id: 'temp', name: 'Tonalidade', icon: '🌡️', min: -50, max: 50, step: 1 },
+        { id: 'magenta', name: 'Matiz', icon: '🎨', min: -50, max: 50, step: 1 },
         { id: 'saturation', name: 'Saturação', icon: '🌈', min: 0, max: 2.0, step: 0.05 },
     ];
 
@@ -205,7 +245,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden">
                 <video ref={videoRef} className="hidden" playsInline muted />
                 <canvas ref={canvasRef} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 pointer-events-none border-[60px] border-black/20"></div>
+                <div className="absolute inset-0 pointer-events-none border-[40px] border-black/10"></div>
             </div>
 
             <footer className="bg-black px-4 pb-12 pt-4 border-t border-white/5 z-50">
@@ -215,9 +255,9 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                             <div className="px-6 py-4 bg-zinc-900 rounded-[2rem] space-y-4">
                                 <div className="flex justify-between items-center">
                                     <span className="text-[10px] font-black uppercase tracking-widest text-sky-400">
-                                        Ajustando: {editTools.find(t => t.id === activeEditTool)?.name}
+                                        {editTools.find(t => t.id === activeEditTool)?.name}
                                     </span>
-                                    <button onClick={() => setActiveEditTool(null)} className="text-xs font-bold">Pronto</button>
+                                    <button onClick={() => setActiveEditTool(null)} className="text-xs font-bold">OK</button>
                                 </div>
                                 <input 
                                     type="range" 
@@ -260,15 +300,15 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                             {Object.values(allPresets).map(eff => (
                                 <button key={eff.id} onClick={() => setActiveVibe(eff.id)} className={`flex flex-col items-center shrink-0 transition-all ${activeVibe === eff.id ? 'scale-110 opacity-100' : 'opacity-30'}`}>
                                     <div className={`w-14 h-14 rounded-full flex items-center justify-center text-xl border ${activeVibe === eff.id ? 'bg-white text-black border-white shadow-xl' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>{eff.label}</div>
-                                    <span className="text-[8px] font-black uppercase mt-2 tracking-widest">{eff.name}</span>
+                                    <span className="text-[8px] font-black uppercase mt-2 tracking-widest">{eff.name.split(' ').pop()}</span>
                                 </button>
                             ))}
                         </div>
                         <div className="flex items-center justify-between px-8">
-                            <button onClick={() => setViewingGallery(true)} className="w-14 h-14 rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden">
-                                {capturedImages.length > 0 && <img src={capturedImages[0]} className="w-full h-full object-cover" />}
+                            <button onClick={() => setViewingGallery(true)} className="w-14 h-14 rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden shadow-lg">
+                                {capturedImages.length > 0 && <img src={capturedImages[0]} className="w-full h-full object-cover" alt="prev" />}
                             </button>
-                            <button onClick={executeCapture} className="w-20 h-20 rounded-full border-4 border-white/30 p-1 active:scale-90 transition-all">
+                            <button onClick={executeCapture} className="w-20 h-20 rounded-full border-4 border-white/30 p-1 active:scale-90 transition-all shadow-[0_0_30px_rgba(255,255,255,0.1)]">
                                 <div className="w-full h-full rounded-full bg-white"></div>
                             </button>
                             <div className="w-14"></div>
@@ -286,7 +326,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                     </header>
                     <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5 no-scrollbar">
                         {capturedImages.map((img, i) => (
-                            <div key={i} onClick={() => setFullscreenImage(i)} className="aspect-[3/4] relative cursor-pointer"><img src={img} className="w-full h-full object-cover" /></div>
+                            <div key={i} onClick={() => setFullscreenImage(i)} className="aspect-[3/4] relative cursor-pointer"><img src={img} className="w-full h-full object-cover" alt={`img-${i}`} /></div>
                         ))}
                     </div>
                 </div>
@@ -298,13 +338,13 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                         <button onClick={() => setFullscreenImage(null)} className="text-zinc-400 font-black uppercase text-[10px]">Voltar</button>
                     </header>
                     <div className="flex-grow flex items-center justify-center p-4">
-                        <img src={capturedImages[fullscreenImage]} className="max-h-full max-w-full object-contain rounded-2xl shadow-2xl" />
+                        <img src={capturedImages[fullscreenImage]} className="max-h-full max-w-full object-contain rounded-2xl shadow-2xl" alt="full" />
                     </div>
                     <footer className="p-8 flex gap-4 bg-black/90">
                         <button onClick={() => {
                             const link = document.createElement('a');
-                            link.href = capturedImages[fullscreenImage];
-                            link.download = `Neos_Paradise_${Date.now()}.jpg`;
+                            link.href = capturedImages[fullscreenImage!];
+                            link.download = `Neos_Premium_${Date.now()}.jpg`;
                             link.click();
                         }} className="flex-1 py-4 bg-zinc-900 rounded-3xl font-black text-[10px] uppercase tracking-widest">Download</button>
                     </footer>
