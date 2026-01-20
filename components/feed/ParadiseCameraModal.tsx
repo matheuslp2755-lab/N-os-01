@@ -6,7 +6,15 @@ interface ParadiseCameraModalProps {
     onClose: () => void;
 }
 
-type VibeEffect = 'nostalgia2007' | 'premium_night';
+type VibeEffect = 
+    | 'soft_girl' 
+    | 'clean_beauty' 
+    | 'barbie_glow' 
+    | 'tumblr_girl' 
+    | 'glow_night' 
+    | 'elegant' 
+    | 'sad_girl';
+
 type LensMM = 24 | 35 | 50 | 85 | 101;
 
 interface EffectConfig {
@@ -15,7 +23,7 @@ interface EffectConfig {
     label: string;
     grain: number;
     blur: number;
-    temp: number; // Em graus de matiz ou deslocamento
+    temp: number; // Matiz/Temperatura
     glow: number;
     saturation: number;
     contrast: number;
@@ -24,55 +32,38 @@ interface EffectConfig {
     vignette: number;
     fade: number;
     skinSoft: number;
-    chromaticAberration?: boolean;
+    magenta?: number;
     haze?: boolean;
-    lossyLook?: boolean;
+    retroDate?: boolean;
 }
 
 const PRESETS: Record<VibeEffect, EffectConfig> = {
-    nostalgia2007: { 
-        id: 'nostalgia2007', 
-        name: 'Nostalgia 2007', 
-        label: 'TUMBLR', 
-        grain: 0.45, 
-        blur: 0.5, 
-        temp: -15, // Frio melancólico
-        glow: 0, 
-        saturation: 0.85, 
-        contrast: 0.85, 
-        exposure: 0.9, 
-        sharpness: 0.7, 
-        vignette: 0.3, 
-        fade: 25, 
-        skinSoft: 0,
-        chromaticAberration: true,
-        haze: true,
-        lossyLook: true
+    soft_girl: { 
+        id: 'soft_girl', name: 'Soft Girl', label: '🌸', grain: 0, blur: 0.1, temp: 5, magenta: 4, glow: 0.3, saturation: 0.95, contrast: 0.85, exposure: 1.4, sharpness: 0.9, vignette: 0.1, fade: 10, skinSoft: 0.8 
     },
-    premium_night: { 
-        id: 'premium_night', 
-        name: 'Premium Night', 
-        label: 'LUXO', 
-        grain: 0, 
-        blur: 0, 
-        temp: 12, // Quente elegante
-        glow: 0.4, 
-        saturation: 1.1, 
-        contrast: 1.15, 
-        exposure: 1.25, 
-        sharpness: 1.3, 
-        vignette: 0.1, 
-        fade: 0, 
-        skinSoft: 0.6,
-        chromaticAberration: false,
-        haze: false,
-        lossyLook: false
+    clean_beauty: { 
+        id: 'clean_beauty', name: 'Clean Beauty', label: '💄', grain: 0, blur: 0, temp: 0, magenta: 0, glow: 0.1, saturation: 1.05, contrast: 1.05, exposure: 1.2, sharpness: 1.1, vignette: 0.05, fade: 0, skinSoft: 0.5 
+    },
+    barbie_glow: { 
+        id: 'barbie_glow', name: 'Barbie Glow', label: '💗', grain: 0, blur: 0.2, temp: 8, magenta: 8, glow: 0.6, saturation: 1.1, contrast: 0.9, exposure: 1.5, sharpness: 0.75, vignette: 0.2, fade: 5, skinSoft: 0.9 
+    },
+    tumblr_girl: { 
+        id: 'tumblr_girl', name: 'Tumblr Girl', label: '📸', grain: 0.2, blur: 0.3, temp: -10, magenta: 0, glow: 0, saturation: 0.9, contrast: 0.9, exposure: 0.9, sharpness: 0.9, vignette: 0.3, fade: 30, skinSoft: 0, retroDate: true 
+    },
+    glow_night: { 
+        id: 'glow_night', name: 'Glow Night', label: '✨', grain: 0.1, blur: 0, temp: 4, magenta: 2, glow: 0.45, saturation: 1.08, contrast: 1.1, exposure: 1.3, sharpness: 1.2, vignette: 0.2, fade: 0, skinSoft: 0.4 
+    },
+    elegant: { 
+        id: 'elegant', name: 'Elegant', label: '💍', grain: 0, blur: 0, temp: -5, magenta: 0, glow: 0, saturation: 0.95, contrast: 1.2, exposure: 1.1, sharpness: 1.25, vignette: 0.15, fade: 5, skinSoft: 0.3 
+    },
+    sad_girl: { 
+        id: 'sad_girl', name: 'Sad Girl', label: '🌙', grain: 0.3, blur: 0.2, temp: -15, magenta: -2, glow: 0, saturation: 0.8, contrast: 0.8, exposure: 0.7, sharpness: 1.0, vignette: 0.5, fade: 15, skinSoft: 0, haze: true 
     }
 };
 
 const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClose }) => {
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-    const [activeVibe, setActiveVibe] = useState<VibeEffect>('premium_night');
+    const [activeVibe, setActiveVibe] = useState<VibeEffect>('soft_girl');
     const [lensMM, setLensMM] = useState<LensMM>(35);
     const [capturedImages, setCapturedImages] = useState<string[]>([]);
     const [viewingGallery, setViewingGallery] = useState(false);
@@ -96,95 +87,96 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const tCtx = tempCanvas.getContext('2d');
         if (!tCtx) return;
 
-        // 1. SKIN & SHARPNESS
+        // 1. SKIN SMOOTHING (Suavização seletiva)
         if (config.skinSoft > 0) {
             ctx.save();
-            ctx.globalAlpha = config.skinSoft * 0.3;
-            ctx.filter = `blur(${Math.round(w * 0.005)}px) brightness(1.05)`;
+            ctx.globalAlpha = config.skinSoft * 0.4;
+            ctx.filter = `blur(${Math.round(w * 0.006)}px) brightness(1.02)`;
             ctx.drawImage(ctx.canvas, 0, 0);
             ctx.restore();
         }
 
-        // 2. COLOR GRADING (Filtro Base)
-        ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${config.temp}deg) blur(${config.blur}px)`;
+        // 2. PRIMARY COLOR GRADING
+        const hueRotate = config.temp + (config.magenta || 0);
+        ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${hueRotate}deg) blur(${config.blur}px)`;
         tCtx.drawImage(ctx.canvas, 0, 0);
         ctx.filter = 'none';
         ctx.drawImage(tempCanvas, 0, 0);
 
-        // 3. ABERRAÇÃO CROMÁTICA (Exclusivo Nostalgia 2007)
-        if (config.chromaticAberration) {
-            ctx.save();
-            ctx.globalCompositeOperation = 'screen';
-            ctx.globalAlpha = 0.5;
-            ctx.drawImage(ctx.canvas, 2, 0); // Canal deslocado
-            ctx.restore();
-        }
-
-        // 4. HAZE & FADE
-        if (config.haze) {
-            ctx.fillStyle = 'rgba(255,255,255,0.05)';
-            ctx.fillRect(0, 0, w, h);
-        }
-        if (config.fade > 0) {
-            ctx.save();
-            ctx.globalCompositeOperation = 'lighten';
-            ctx.fillStyle = `rgba(100, 100, 120, ${config.fade / 500})`;
-            ctx.fillRect(0, 0, w, h);
-            ctx.restore();
-        }
-
-        // 5. GLOW (Premium Night)
+        // 3. BLOOM / GLOW (Luz de fada)
         if (config.glow > 0) {
             ctx.save();
             ctx.globalAlpha = config.glow * 0.5;
             ctx.globalCompositeOperation = 'screen';
-            ctx.filter = `blur(${Math.round(w * 0.02)}px) saturate(1.5)`;
+            ctx.filter = `blur(${Math.round(w * 0.025)}px) saturate(1.8)`;
             ctx.drawImage(ctx.canvas, 0, 0);
             ctx.restore();
         }
 
-        // 6. GRAIN (Ruído Anos 2000)
+        // 4. HAZE / ATMOSPHERE
+        if (config.haze) {
+            ctx.save();
+            const grad = ctx.createLinearGradient(0,0,0,h);
+            grad.addColorStop(0, 'rgba(200,210,255,0.1)');
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0,0,w,h);
+            ctx.restore();
+        }
+
+        // 5. VINTAGE GRAIN
         if (config.grain > 0) {
             ctx.save();
-            ctx.globalAlpha = config.grain * 0.3;
+            ctx.globalAlpha = config.grain * 0.2;
             ctx.globalCompositeOperation = 'overlay';
-            for (let i = 0; i < 600; i++) {
+            for (let i = 0; i < 800; i++) {
                 ctx.fillStyle = Math.random() > 0.5 ? '#fff' : '#000';
-                ctx.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5);
+                ctx.fillRect(Math.random() * w, Math.random() * h, 1.2, 1.2);
             }
             ctx.restore();
         }
 
-        // 7. WATERMARK (Data e Identidade)
+        // 6. FINAL SHARPENING
+        if (config.sharpness > 1.0) {
+            ctx.save();
+            ctx.globalAlpha = (config.sharpness - 1.0) * 0.2;
+            ctx.globalCompositeOperation = 'overlay';
+            ctx.drawImage(ctx.canvas, 0, 0);
+            ctx.restore();
+        }
+
+        // 7. WATERMARK & OVERLAYS
         if (isFinal) {
             const now = new Date();
-            const dateStr = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
             ctx.save();
             
-            if (config.id === 'nostalgia2007') {
-                // Estética Casio/Digital Antiga
-                const fSize = Math.round(h * 0.04);
+            // Retro Date Stamp (Estilo Digital 2000s)
+            if (config.retroDate) {
+                const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
+                const fSize = Math.round(h * 0.045);
                 ctx.font = `bold ${fSize}px "Courier New", monospace`;
-                ctx.fillStyle = '#facc15'; // Amarelo clássico
+                ctx.fillStyle = '#facc15'; // Amarelo Casio
                 ctx.shadowColor = 'rgba(0,0,0,0.5)';
-                ctx.shadowBlur = 4;
+                ctx.shadowBlur = 5;
                 ctx.fillText(dateStr, w * 0.08, h - (h * 0.08));
-            } else {
-                // Estética Lifestyle Premium
-                const fSize = Math.round(h * 0.03);
-                ctx.font = `italic 300 ${fSize}px sans-serif`;
-                ctx.fillStyle = 'rgba(255,255,255,0.4)';
-                ctx.textAlign = 'right';
-                ctx.fillText('Néos Pro', w - (w * 0.08), h - (h * 0.08));
             }
+
+            // Neos Pro Mark
+            const markSize = Math.round(h * 0.03);
+            ctx.font = `italic 600 ${markSize}px sans-serif`;
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.textAlign = 'right';
+            ctx.shadowColor = 'rgba(0,0,0,0.3)';
+            ctx.shadowBlur = 4;
+            ctx.fillText('Neos Pro', w - (w * 0.08), h - (h * 0.08));
             ctx.restore();
         }
 
         // 8. VIGNETTE
         if (config.vignette > 0) {
-            const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w*0.9);
+            const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w*1.0);
             grad.addColorStop(0, 'transparent');
-            grad.addColorStop(1, `rgba(0,0,0,${config.vignette * 0.8})`);
+            grad.addColorStop(1, `rgba(0,0,0,${config.vignette * 0.85})`);
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, w, h);
         }
@@ -227,7 +219,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+                video: { facingMode, width: { ideal: 2160 }, height: { ideal: 3840 } }, // Forçamos 4K se disponível
                 audio: false
             });
             streamRef.current = stream;
@@ -237,7 +229,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 requestRef.current = requestAnimationFrame(renderLoop);
             }
         } catch (err: any) {
-            setCameraError("Acesso à câmera negado.");
+            setCameraError("Acesso à câmera negado ou não suportado.");
         }
     }, [facingMode, renderLoop]);
 
@@ -274,7 +266,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             applyQualityPipeline(outCtx, cropW, cropH, PRESETS[activeVibe], true);
         }
 
-        const dataUrl = outputCanvas.toDataURL('image/jpeg', 0.95);
+        const dataUrl = outputCanvas.toDataURL('image/jpeg', 0.98);
         setCapturedImages(prev => [dataUrl, ...prev]);
     };
 
@@ -312,7 +304,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                     <div className="absolute inset-0 z-[200] bg-black flex flex-col animate-fade-in">
                         <header className="p-6 flex justify-between items-center bg-zinc-900/80 backdrop-blur-2xl border-b border-white/5">
                             <button onClick={() => setViewingGallery(false)} className="text-[11px] font-black uppercase tracking-[0.3em] text-zinc-400">Voltar</button>
-                            <h3 className="text-xs font-black uppercase tracking-[0.3em]">{capturedImages.length} Fotos</h3>
+                            <h3 className="text-xs font-black uppercase tracking-[0.3em]">{capturedImages.length} Recs</h3>
                             <button onClick={() => setCapturedImages([])} className="text-red-500 text-[11px] font-black uppercase">Limpar</button>
                         </header>
                         <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5 no-scrollbar">
@@ -377,23 +369,20 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 </div>
             )}
 
-            <footer className="bg-black/90 backdrop-blur-3xl px-4 pb-14 pt-8 border-t border-white/5 z-50">
+            <footer className="bg-black/90 backdrop-blur-3xl px-4 pb-14 pt-8 border-t border-white/5 z-50 overflow-x-auto no-scrollbar">
                 {!viewingGallery ? (
                     <div className="flex flex-col gap-10">
-                        <div className="flex justify-center gap-12 overflow-x-auto no-scrollbar py-2">
+                        <div className="flex gap-4 overflow-x-auto no-scrollbar py-2 px-4 snap-x snap-mandatory">
                             {(Object.values(PRESETS)).map((eff) => (
                                 <button
                                     key={eff.id}
                                     onClick={() => setActiveVibe(eff.id)}
-                                    className={`flex flex-col items-center shrink-0 transition-all duration-500 ${activeVibe === eff.id ? 'scale-110 opacity-100' : 'scale-90 opacity-20'}`}
+                                    className={`flex flex-col items-center shrink-0 snap-center transition-all duration-500 ${activeVibe === eff.id ? 'scale-110 opacity-100' : 'scale-90 opacity-20'}`}
                                 >
-                                    <div className={`w-16 h-16 rounded-3xl flex flex-col items-center justify-center border-2 transition-all ${activeVibe === eff.id ? 'bg-zinc-900 border-sky-400 shadow-[0_0_40px_rgba(14,165,233,0.3)]' : 'bg-zinc-900/50 border-white/10'}`}>
-                                        <span className="text-[7px] font-black uppercase text-white/40 tracking-tighter">{eff.label}</span>
-                                        <span className={`text-[10px] font-black uppercase mt-1 tracking-widest ${activeVibe === eff.id ? 'text-white' : 'text-zinc-600'}`}>
-                                            {eff.id === 'nostalgia2007' ? '07' : '24'}
-                                        </span>
+                                    <div className={`w-16 h-16 rounded-3xl flex flex-col items-center justify-center border-2 transition-all ${activeVibe === eff.id ? 'bg-zinc-900 border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-zinc-900/50 border-white/10'}`}>
+                                        <span className="text-xl mb-1">{eff.label}</span>
                                     </div>
-                                    <span className={`text-[9px] font-black uppercase mt-3 tracking-[0.2em] ${activeVibe === eff.id ? 'text-sky-400' : 'text-zinc-500'}`}>{eff.name}</span>
+                                    <span className={`text-[8px] font-black uppercase mt-3 tracking-[0.2em] whitespace-nowrap ${activeVibe === eff.id ? 'text-white' : 'text-zinc-500'}`}>{eff.name}</span>
                                 </button>
                             ))}
                         </div>
