@@ -70,6 +70,18 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const chunksRef = useRef<Blob[]>([]);
     const timerRef = useRef<number | null>(null);
 
+    // Fator de escala da moldura: quanto maior o MM, menor o quadrado (mais "zoom" no corte)
+    const getLensFrameScale = (mm: LensMM) => {
+        switch(mm) {
+            case 24: return 0.90; // Quase tela cheia
+            case 35: return 0.75;
+            case 50: return 0.55;
+            case 85: return 0.35;
+            case 101: return 0.22; // Quadrado bem pequeno no centro
+            default: return 0.75;
+        }
+    };
+
     const handleFocus = (e: React.MouseEvent | React.TouchEvent) => {
         const rect = e.currentTarget.getBoundingClientRect();
         let clientX, clientY;
@@ -194,29 +206,28 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         setShowFlashAnim(true);
         setTimeout(() => setShowFlashAnim(false), 80);
 
-        // MOTOR DE RECORTE ABSOLUTO:
-        // A moldura branca na tela ocupa 85% da largura. A proporção é 3:4.
-        // Como agora o preview NÃO tem zoom (scale 1), o cálculo é direto no sensor.
+        // MOTOR DE RECORTE ABSOLUTO DINÂMICO:
+        // O preview está em escala 1 (estável).
+        // A moldura branca muda de tamanho conforme a lente.
         
-        const vw = canvas.width;
-        const vh = canvas.height;
+        const frameScale = getLensFrameScale(lensMM);
         
-        // A moldura visível tem 85% da largura da tela do celular.
-        // Calculamos esse mesmo retângulo de 85% de largura proporcional no sensor.
-        const sourceWidth = vw * 0.85;
-        const sourceHeight = sourceWidth * (4/3);
+        // A moldura visível tem frameScale * largura_da_tela.
+        // Calculamos o tamanho desse retângulo proporcionalmente no sensor original.
+        const sourceWidth = canvas.width * frameScale;
+        const sourceHeight = sourceWidth * (4/3); // Mantemos a proporção vertical da moldura
 
-        // Coordenadas centrais para o recorte
-        const sx = (vw - sourceWidth) / 2;
-        const sy = (vh - sourceHeight) / 2;
+        // Coordenadas centrais para o recorte cirúrgico
+        const sx = (canvas.width - sourceWidth) / 2;
+        const sy = (canvas.height - sourceHeight) / 2;
 
         const outCanvas = document.createElement('canvas');
         outCanvas.width = 1080; 
-        outCanvas.height = 1440; // Proporção 3:4
+        outCanvas.height = 1440; // Proporção 3:4 padrão
         const oCtx = outCanvas.getContext('2d');
         
         if (oCtx) {
-            // Extrai apenas a fatia central que o usuário vê dentro do quadrado
+            // Extrai exatamente a área delimitada pelo quadrado variável
             oCtx.drawImage(canvas, sx, sy, sourceWidth, sourceHeight, 0, 0, 1080, 1440);
             applyAIPipeline(oCtx, 1080, 1440, CAMERA_ENGINE_PACKS[activeVibe], true);
             setCapturedMedia(prev => [{url: outCanvas.toDataURL('image/jpeg', 0.9), type: 'photo'}, ...prev]);
@@ -247,6 +258,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
     if (!isOpen) return null;
 
+    const currentFrameScale = getLensFrameScale(lensMM);
+
     return (
         <div className="fixed inset-0 bg-black z-[600] flex flex-col overflow-hidden text-white font-sans touch-none select-none">
             {showFlashAnim && <div className="fixed inset-0 z-[1000] bg-white"></div>}
@@ -266,7 +279,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden" onMouseDown={handleFocus} onTouchStart={handleFocus}>
                 <video ref={videoRef} className="hidden" playsInline muted />
                 
-                {/* PREVIEW SEM ZOOM: Imagem natural do sensor */}
+                {/* PREVIEW ESTÁVEL (SEM ZOOM VISUAL) */}
                 <div className="w-full h-full flex items-center justify-center">
                     <canvas ref={canvasRef} className="w-full h-full object-cover" />
                 </div>
@@ -281,15 +294,15 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                     </div>
                 )}
 
-                {/* MOLDURA DE RECORTE: O QUE ESTÁ DENTRO DISSO É O QUE SERÁ SALVO */}
+                {/* MOLDURA DE RECORTE DINÂMICA: O tamanho muda com o MM */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
                     <div 
-                        className="border-4 border-white rounded-[3.5rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)]"
-                        style={{ width: '85%', aspectRatio: '3/4' }}
+                        className="border-4 border-white rounded-[3rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)"
+                        style={{ width: `${currentFrameScale * 100}%`, aspectRatio: '3/4' }}
                     >
-                         <div className="absolute bottom-8 left-8 opacity-60 flex flex-col gap-0.5">
-                            <span className="text-[10px] font-black tracking-widest">{lensMM}MM SIMULATOR</span>
-                            <span className="text-[8px] font-bold uppercase tracking-tighter text-sky-400">Fixed Frame Active</span>
+                         <div className="absolute bottom-6 left-6 opacity-60 flex flex-col gap-0.5">
+                            <span className="text-[10px] font-black tracking-widest">{lensMM}MM ACTIVE FRAME</span>
+                            <span className="text-[8px] font-bold uppercase tracking-tighter text-sky-400">Paradise Crop v3.0</span>
                          </div>
                     </div>
                 </div>
