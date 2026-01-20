@@ -4,10 +4,9 @@ import * as admin from 'firebase-admin';
 admin.initializeApp();
 
 /**
- * Função auxiliar para buscar todos os tokens ativos de um usuário
- * e enviar a mensagem para cada um deles via FCM.
+ * Função central para enviar notificação push para todos os dispositivos de um usuário
  */
-async function sendFCMToUser(userId: string, payload: admin.messaging.MessagingPayload) {
+async function sendPushToUser(userId: string, title: string, body: string, data: any = {}) {
     try {
         const tokensSnap = await admin.firestore()
             .collection('users')
@@ -15,30 +14,39 @@ async function sendFCMToUser(userId: string, payload: admin.messaging.MessagingP
             .collection('fcm_tokens')
             .get();
 
-        if (tokensSnap.empty) {
-            console.log(`Néos FCM: Nenhum token encontrado para o usuário ${userId}`);
-            return;
-        }
+        if (tokensSnap.empty) return;
 
         const tokens = tokensSnap.docs.map(d => d.data().token);
         
-        // Envio em lote para todos os dispositivos do usuário
+        const payload: admin.messaging.MessagingPayload = {
+            notification: {
+                title,
+                body,
+                icon: 'https://firebasestorage.googleapis.com/v0/b/teste-rede-fcb99.appspot.com/o/assets%2Ficon-192.png?alt=media',
+                clickAction: 'https://' + process.env.GCLOUD_PROJECT + '.web.app'
+            },
+            data: {
+                ...data,
+                click_action: 'FLUTTER_NOTIFICATION_CLICK'
+            }
+        };
+
         const response = await admin.messaging().sendToDevice(tokens, payload);
         
-        // Limpeza de tokens inválidos
+        // Cleanup de tokens inválidos
+        const cleanup: Promise<any>[] = [];
         response.results.forEach((result, index) => {
             const error = result.error;
             if (error) {
-                console.error('Falha no envio para token:', tokens[index], error);
                 if (error.code === 'messaging/invalid-registration-token' ||
                     error.code === 'messaging/registration-token-not-registered') {
-                    // Remover token expirado
-                    tokensSnap.docs[index].ref.delete();
+                    cleanup.push(tokensSnap.docs[index].ref.delete());
                 }
             }
         });
+        await Promise.all(cleanup);
     } catch (error) {
-        console.error('Erro ao processar envio FCM:', error);
+        console.error('FCM Send Error:', error);
     }
 }
 
@@ -69,21 +77,13 @@ export const onNewMessageNotify = functions.firestore
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        // 2. Envio FCM para todos os dispositivos
-        const fcmPayload: admin.messaging.MessagingPayload = {
-            notification: {
-                title: 'Néos: Nova Mensagem',
-                body: `${sender?.username || 'Alguém'}: ${msg.text || 'Mídia'}`,
-                icon: '/favicon.ico',
-                clickAction: 'FLUTTER_NOTIFICATION_CLICK' // Padrão para abrir a app/site
-            },
-            data: {
-                type: 'CHAT',
-                conversationId: conversationId
-            }
-        };
-
-        return sendFCMToUser(recipientId, fcmPayload);
+        // 2. Envio Push FCM real
+        return sendPushToUser(
+            recipientId, 
+            `Néos: @${sender?.username || 'Alguém'}`, 
+            msg.text || 'Enviou uma mídia para você',
+            { conversationId, type: 'CHAT' }
+        );
     });
 
 export const onNewCallNotify = functions.firestore
@@ -92,28 +92,12 @@ export const onNewCallNotify = functions.firestore
         const call = snap.data();
         if (!call || call.status !== 'ringing') return null;
 
-        await admin.firestore().collection('notifications_in_app').add({
-            recipientId: call.receiverId,
-            title: `Chamada de ${call.type === 'video' ? 'Vídeo' : 'Voz'}`,
-            body: `${call.callerUsername} está ligando...`,
-            type: 'call',
-            read: false,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        const fcmPayload: admin.messaging.MessagingPayload = {
-            notification: {
-                title: 'Chamada Néos',
-                body: `${call.callerUsername} está te ligando...`,
-                icon: '/favicon.ico'
-            },
-            data: {
-                type: 'CALL',
-                callId: context.params.callId
-            }
-        };
-
-        return sendFCMToUser(call.receiverId, fcmPayload);
+        return sendPushToUser(
+            call.receiverId,
+            'Chamada no Néos',
+            `${call.callerUsername} está te ligando...`,
+            { callId: context.params.callId, type: 'CALL' }
+        );
     });
 
 export const onPostLikeNotify = functions.firestore
@@ -129,7 +113,6 @@ export const onPostLikeNotify = functions.firestore
         const likerDoc = await admin.firestore().collection('users').doc(likerId).get();
         const liker = likerDoc.data();
 
-        // Notificação Interna (Bolinha)
         await admin.firestore().collection('users').doc(newData.userId).collection('notifications').add({
             type: 'like_post',
             fromUserId: likerId,
@@ -139,14 +122,10 @@ export const onPostLikeNotify = functions.firestore
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        // Notificação Push
-        const fcmPayload: admin.messaging.MessagingPayload = {
-            notification: {
-                title: 'Néos: Curtida',
-                body: `${liker?.username || 'Alguém'} curtiu sua publicação.`,
-                icon: '/favicon.ico'
-            }
-        };
-
-        return sendFCMToUser(newData.userId, fcmPayload);
+        return sendPushToUser(
+            newData.userId,
+            'Néos: Nova curtida',
+            `@${liker?.username || 'Alguém'} curtiu sua publicação!`,
+            { postId: change.after.id, type: 'LIKE' }
+        );
     });

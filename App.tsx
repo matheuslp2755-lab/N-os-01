@@ -1,6 +1,6 @@
 import React, { useState, useEffect, StrictMode } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db, doc, updateDoc, serverTimestamp, messaging, getToken, setDoc, collection } from './firebase';
+import { auth, db, doc, updateDoc, serverTimestamp, messaging, getToken, setDoc } from './firebase';
 import Login from './components/Login';
 import SignUp from './context/SignUp';
 import Feed from './components/Feed';
@@ -22,12 +22,19 @@ const AppContent: React.FC = () => {
       try {
         const permission = await Notification.requestPermission();
         if (permission === 'granted') {
-          const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+          // Registro explícito do service worker para o FCM
+          const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+          
+          const token = await getToken(messaging, { 
+            vapidKey: VAPID_KEY,
+            serviceWorkerRegistration: registration
+          });
+
           if (token) {
-            console.log("Néos FCM: Token gerado com sucesso.");
+            console.log("Néos FCM: Token capturado:", token);
             
-            // Salvar token na subcoleção de dispositivos para suportar múltiplos aparelhos
-            const deviceId = btoa(navigator.userAgent).substring(0, 32); // ID simplificado do dispositivo
+            // Gerar ID único para este navegador/dispositivo
+            const deviceId = btoa(navigator.userAgent).substring(0, 32); 
             const tokenRef = doc(db, 'users', user.uid, 'fcm_tokens', deviceId);
             
             await setDoc(tokenRef, {
@@ -37,9 +44,8 @@ const AppContent: React.FC = () => {
               userAgent: navigator.userAgent
             });
 
-            // Atualizar status global do usuário
             await updateDoc(doc(db, 'users', user.uid), {
-              notificationsEnabled: true,
+              pushEnabled: true,
               lastTokenSync: serverTimestamp()
             });
           }
@@ -49,16 +55,7 @@ const AppContent: React.FC = () => {
       }
     };
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/firebase-messaging-sw.js')
-        .then((registration) => {
-          console.log('Néos SW: Service Worker registrado:', registration.scope);
-          setupNotifications();
-        })
-        .catch((err) => {
-          console.error('Néos SW: Erro ao registrar:', err);
-        });
-    }
+    setupNotifications();
   }, [user]);
 
   useEffect(() => {
