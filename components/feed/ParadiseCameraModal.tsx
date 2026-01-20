@@ -6,7 +6,10 @@ interface ParadiseCameraModalProps {
     onClose: () => void;
 }
 
-type VibeEffect = 'neospro' | 'asterisk' | 'tumblrclassic' | 'tumblrdark' | 'vibe' | 'y2kreal' | 'eighties';
+type VibeEffect = 
+    | 'raw' | 'y2kflash' | 'indie2016' | 'ultra4k' 
+    | 'noitgray' | 'flareflex' | 'analoggold' | 'cyberpunk';
+
 type LensMM = 24 | 35 | 50 | 85 | 101;
 
 interface EffectConfig {
@@ -23,22 +26,23 @@ interface EffectConfig {
     sharpness: number;
     vignette: number;
     fade: number;
-    skinSoft: number;
+    flare?: boolean;
 }
 
 const PRESETS: Record<VibeEffect, EffectConfig> = {
-    neospro: { id: 'neospro', name: 'Neos Pro', label: 'RAW', grain: 0, blur: 0, temp: 0, glow: 0.1, saturation: 1.05, contrast: 1.05, exposure: 1.05, sharpness: 1.5, vignette: 0.1, fade: 0, skinSoft: 0.1 },
-    asterisk: { id: 'asterisk', name: 'Asterisk', label: 'META', grain: 0.2, blur: 0, temp: -15, glow: 0.6, saturation: 0.8, contrast: 1.4, exposure: 1.1, sharpness: 1.2, vignette: 0.4, fade: 0, skinSoft: 0 },
-    tumblrclassic: { id: 'tumblrclassic', name: 'Tumblr Classic', label: '90s', grain: 0.3, blur: 0.8, temp: 10, glow: 0.3, saturation: 0.7, contrast: 0.9, exposure: 1.15, sharpness: 0.8, vignette: 0.2, fade: 20, skinSoft: 0.4 },
-    tumblrdark: { id: 'tumblrdark', name: 'Tumblr Dark', label: 'MOOD', grain: 0.5, blur: 0.5, temp: -5, glow: 0.2, saturation: 0.6, contrast: 1.3, exposure: 0.85, sharpness: 1.1, vignette: 0.6, fade: 10, skinSoft: 0 },
-    vibe: { id: 'vibe', name: 'Vibe', label: 'LIVE', grain: 0.1, blur: 0, temp: 5, glow: 0.4, saturation: 1.2, contrast: 1.1, exposure: 1.1, sharpness: 1.3, vignette: 0.2, fade: 0, skinSoft: 0.6 },
-    y2kreal: { id: 'y2kreal', name: 'Y2K Real', label: 'SONY', grain: 0.4, blur: 0.2, temp: 0, glow: 0.5, saturation: 1.3, contrast: 1.5, exposure: 1.35, sharpness: 0.9, vignette: 0.5, fade: 0, skinSoft: 0.2 },
-    eighties: { id: 'eighties', name: 'Anos 80', label: 'FILM', grain: 0.7, blur: 0.4, temp: 20, glow: 0.7, saturation: 1.1, contrast: 1.2, exposure: 1.1, sharpness: 1.0, vignette: 0.4, fade: 15, skinSoft: 0.1 }
+    raw: { id: 'raw', name: 'Neos RAW', label: 'RAW', grain: 0, blur: 0, temp: 0, glow: 0.1, saturation: 1.0, contrast: 1.0, exposure: 1.0, sharpness: 1.2, vignette: 0.1, fade: 0 },
+    y2kflash: { id: 'y2kflash', name: 'Y2K Flash', label: '2000', grain: 0.4, blur: 0.1, temp: 15, glow: 0.6, saturation: 1.3, contrast: 1.5, exposure: 1.4, sharpness: 0.8, vignette: 0.4, fade: 0 },
+    indie2016: { id: 'indie2016', name: 'Indie 2016', label: '2016', grain: 0.2, blur: 0.6, temp: -5, glow: 0.2, saturation: 0.7, contrast: 0.8, exposure: 1.1, sharpness: 0.6, vignette: 0.2, fade: 25 },
+    ultra4k: { id: 'ultra4k', name: 'Hyper 4K', label: '4K', grain: 0, blur: 0, temp: 0, glow: 0, saturation: 1.05, contrast: 1.1, exposure: 1.05, sharpness: 2.2, vignette: 0.1, fade: 0 },
+    noitgray: { id: 'noitgray', name: 'Noir Gray', label: 'B&W', grain: 0.5, blur: 0.2, temp: 0, glow: 0.3, saturation: 0, contrast: 1.4, exposure: 1.0, sharpness: 1.2, vignette: 0.7, fade: 5 },
+    flareflex: { id: 'flareflex', name: 'Flare Reflex', label: 'LENS', grain: 0.1, blur: 0.2, temp: 10, glow: 0.8, saturation: 1.1, contrast: 1.0, exposure: 1.1, sharpness: 1.0, vignette: 0.3, fade: 0, flare: true },
+    analoggold: { id: 'analoggold', name: 'Analog Gold', label: 'GOLD', grain: 0.7, blur: 0.4, temp: 25, glow: 0.4, saturation: 1.2, contrast: 1.1, exposure: 1.0, sharpness: 0.9, vignette: 0.5, fade: 10 },
+    cyberpunk: { id: 'cyberpunk', name: 'Cyber Neon', label: 'NEON', grain: 0.3, blur: 0, temp: -30, glow: 0.9, saturation: 1.8, contrast: 1.3, exposure: 1.2, sharpness: 1.4, vignette: 0.5, fade: 0 }
 };
 
 const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClose }) => {
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-    const [activeVibe, setActiveVibe] = useState<VibeEffect>('neospro');
+    const [activeVibe, setActiveVibe] = useState<VibeEffect>('raw');
     const [lensMM, setLensMM] = useState<LensMM>(35);
     const [capturedImages, setCapturedImages] = useState<string[]>([]);
     const [viewingGallery, setViewingGallery] = useState(false);
@@ -57,29 +61,18 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     };
 
     const applyQualityPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
-        // 1. BASE QUALITY PIPELINE (COMPETITIVO/FLAGSHIP)
-        // High-Quality Upscale Simulation & HDR Recovery
+        // 1. SHARPNESS & BASE HDR
         ctx.globalCompositeOperation = 'overlay';
-        ctx.globalAlpha = 0.2;
+        ctx.globalAlpha = 0.15;
         ctx.drawImage(ctx.canvas, 0, 0);
         
-        // Intelligent Sharpness (Unsharp Mask simulation)
         ctx.globalCompositeOperation = 'hard-light';
         ctx.globalAlpha = (config.sharpness * 0.1);
         ctx.drawImage(ctx.canvas, 0, 0);
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1.0;
 
-        // 2. SKIN RETOUCHING (PRESERVA TEXTURA)
-        if (config.skinSoft > 0) {
-            ctx.save();
-            ctx.filter = `blur(${Math.round(w * 0.004)}px) contrast(1.1) brightness(1.02)`;
-            ctx.globalAlpha = config.skinSoft * 0.45;
-            ctx.drawImage(ctx.canvas, 0, 0);
-            ctx.restore();
-        }
-
-        // 3. COLOR GRADING & FILTERS
+        // 2. FILTERS (TEMP, SAT, CONTRAST)
         ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${config.temp}deg) blur(${config.blur}px)`;
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = w; tempCanvas.height = h;
@@ -90,16 +83,36 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.drawImage(tempCanvas, 0, 0);
         }
 
-        // 4. PREMIUM OPTICS (Glow, Bloom, Fade)
+        // 3. GLOW / BLOOM
         if (config.glow > 0) {
             ctx.save();
             ctx.globalAlpha = config.glow * 0.4;
             ctx.globalCompositeOperation = 'screen';
-            ctx.filter = `blur(${Math.round(w * 0.015)}px) brightness(1.3) saturate(1.2)`;
+            ctx.filter = `blur(${Math.round(w * 0.02)}px) brightness(1.4)`;
             ctx.drawImage(ctx.canvas, 0, 0);
             ctx.restore();
         }
 
+        // 4. LENS FLARE (Reflexo)
+        if (config.flare) {
+            ctx.save();
+            const flareGrad = ctx.createRadialGradient(w * 0.2, h * 0.2, 0, w * 0.2, h * 0.2, w * 0.4);
+            flareGrad.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+            flareGrad.addColorStop(0.2, 'rgba(0, 200, 255, 0.1)');
+            flareGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = flareGrad;
+            ctx.globalCompositeOperation = 'screen';
+            ctx.fillRect(0, 0, w, h);
+            
+            // Pequenos círculos de reflexo
+            ctx.beginPath();
+            ctx.arc(w * 0.5, h * 0.5, w * 0.05, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 100, 100, 0.1)';
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // 5. VINTAGE ELEMENTS (GRAIN & FADE)
         if (config.fade > 0) {
             ctx.save();
             ctx.globalCompositeOperation = 'lighten';
@@ -108,43 +121,40 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.restore();
         }
 
-        // 5. TEXTURE & IDENTITY
         if (config.grain > 0) {
             ctx.save();
-            ctx.globalAlpha = config.grain * 0.28;
+            ctx.globalAlpha = config.grain * 0.25;
             ctx.globalCompositeOperation = 'overlay';
-            for (let i = 0; i < 450; i++) {
+            for (let i = 0; i < 400; i++) {
                 ctx.fillStyle = Math.random() > 0.5 ? '#fff' : '#000';
-                ctx.fillRect(Math.random() * w, Math.random() * h, 1.3, 1.3);
+                ctx.fillRect(Math.random() * w, Math.random() * h, 1.4, 1.4);
             }
             ctx.restore();
         }
 
+        // 6. WATERMARK (Only Final)
         if (isFinal) {
             const now = new Date();
             const dateStr = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
-            const fSize = Math.round(h * 0.038);
+            const fSize = Math.round(h * 0.035);
             ctx.save();
-            // Data Vintage (Amarelo Digital)
             ctx.font = `bold ${fSize}px "Courier New", monospace`;
             ctx.fillStyle = '#facc15';
             ctx.shadowColor = 'rgba(0,0,0,0.6)';
             ctx.shadowBlur = fSize * 0.2;
             ctx.fillText(dateStr, w * 0.06, h - (h * 0.07));
-            
-            // Marca Neos Responsiva
             ctx.font = `italic ${fSize * 0.8}px sans-serif`;
             ctx.fillStyle = 'rgba(255,255,255,0.45)';
             ctx.textAlign = 'right';
-            ctx.fillText('Neos', w - (w * 0.06), h - (h * 0.07));
+            ctx.fillText('Néos Pro', w - (w * 0.06), h - (h * 0.07));
             ctx.restore();
         }
 
-        // 6. VIGNETTE FINAL
+        // 7. VIGNETTE
         if (config.vignette > 0) {
             const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w*0.9);
             grad.addColorStop(0, 'transparent');
-            grad.addColorStop(1, `rgba(0,0,0,${config.vignette * 0.75})`);
+            grad.addColorStop(1, `rgba(0,0,0,${config.vignette * 0.7})`);
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, w, h);
         }
@@ -197,7 +207,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 requestRef.current = requestAnimationFrame(renderLoop);
             }
         } catch (err: any) {
-            setCameraError("Acesso à câmera negado pelo sistema.");
+            setCameraError("Acesso à câmera negado.");
         }
     }, [facingMode, renderLoop]);
 
