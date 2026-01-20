@@ -14,7 +14,7 @@
       OneSignalDeferred.push(async function(OneSignal) {
         await OneSignal.init({
           appId: "e1dcfeb7-6f34-440a-b65c-f61e2b3253a2",
-          safari_web_id: "web.onesignal.auto.10444390-e374-4b53-9363-239108f97116",
+          safari_web_id: "web.onesignal.auto.5e2915a8-1095-4900-b2af-7b25bf2970dd",
           notifyButton: { 
             enable: false 
           },
@@ -22,7 +22,7 @@
           serviceWorkerPath: "OneSignalSDKWorker.js"
         });
 
-        // FUNÇÃO DE ATIVAÇÃO EXPLÍCITA (Essencial para v16)
+        // FUNÇÃO DE ATIVAÇÃO EXPLÍCITA
         const activatePushSubscription = async () => {
           try {
             const permission = Notification.permission;
@@ -30,7 +30,6 @@
 
             if (permission === "granted") {
               console.log("Néos OneSignal: Permissão concedida. Executando optIn()...");
-              // No v16, o optIn() é obrigatório para gerar o Subscription ID efetivo
               await OneSignal.User.PushSubscription.optIn();
               
               const subscriptionId = OneSignal.User.PushSubscription.id;
@@ -43,10 +42,8 @@
           }
         };
 
-        // 1. Tenta ativar imediatamente se a permissão já existe (usuário voltando)
         activatePushSubscription();
 
-        // 2. Escuta a mudança de permissão (usuário aceitando o prompt agora)
         OneSignal.Notifications.addEventListener("permissionChange", async (permission) => {
           console.log("Néos OneSignal: Mudança de permissão detectada:", permission);
           if (permission) {
@@ -55,7 +52,6 @@
           }
         });
 
-        // 3. Listener para mudanças no estado da assinatura
         OneSignal.User.PushSubscription.addEventListener("change", (event) => {
           console.log("Néos OneSignal: Estado da assinatura mudou:", event.current);
         });
