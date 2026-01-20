@@ -1,6 +1,6 @@
 import React, { useState, useEffect, StrictMode } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db, doc, updateDoc, serverTimestamp, messaging, getToken } from './firebase';
+import { auth, db, doc, updateDoc, serverTimestamp, messaging, getToken, setDoc, collection } from './firebase';
 import Login from './components/Login';
 import SignUp from './context/SignUp';
 import Feed from './components/Feed';
@@ -25,8 +25,20 @@ const AppContent: React.FC = () => {
           const token = await getToken(messaging, { vapidKey: VAPID_KEY });
           if (token) {
             console.log("Néos FCM: Token gerado com sucesso.");
+            
+            // Salvar token na subcoleção de dispositivos para suportar múltiplos aparelhos
+            const deviceId = btoa(navigator.userAgent).substring(0, 32); // ID simplificado do dispositivo
+            const tokenRef = doc(db, 'users', user.uid, 'fcm_tokens', deviceId);
+            
+            await setDoc(tokenRef, {
+              token: token,
+              platform: 'web',
+              lastUpdated: serverTimestamp(),
+              userAgent: navigator.userAgent
+            });
+
+            // Atualizar status global do usuário
             await updateDoc(doc(db, 'users', user.uid), {
-              fcmToken: token,
               notificationsEnabled: true,
               lastTokenSync: serverTimestamp()
             });
@@ -37,18 +49,16 @@ const AppContent: React.FC = () => {
       }
     };
 
-    // Registrar o Service Worker do Firebase se ainda não estiver
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/firebase-messaging-sw.js')
         .then((registration) => {
-          console.log('Néos SW: Service Worker registrado com sucesso:', registration.scope);
+          console.log('Néos SW: Service Worker registrado:', registration.scope);
+          setupNotifications();
         })
         .catch((err) => {
-          console.error('Néos SW: Erro ao registrar Service Worker:', err);
+          console.error('Néos SW: Erro ao registrar:', err);
         });
     }
-
-    setupNotifications();
   }, [user]);
 
   useEffect(() => {
