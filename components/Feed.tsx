@@ -13,10 +13,9 @@ import CreateVibeModal from './vibes/CreateVibeModal';
 import VibeFeed from './vibes/VibeFeed';
 import VibeBrowser from './browser/VibeBrowser';
 import CreateMenuModal from './feed/CreateMenuModal';
-import VibeBeamModal from './feed/VibeBeamModal';
 import WeatherBanner from './feed/WeatherBanner';
 import ParadiseCameraModal from './feed/ParadiseCameraModal';
-import { auth, db, collection, query, onSnapshot, orderBy, getDocs, where, doc, getDoc, limit, deleteDoc, updateDoc, increment, serverTimestamp } from '../firebase';
+import { auth, db, collection, query, onSnapshot, orderBy, getDocs, where, doc, getDoc, limit, deleteDoc, updateDoc, serverTimestamp } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 
 const Feed: React.FC = () => {
@@ -29,7 +28,6 @@ const Feed: React.FC = () => {
   const [showPushBanner, setShowPushBanner] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   
-  // In-App Alert state for messages
   const [inAppAlert, setInAppAlert] = useState<{show: boolean, title: string, body: string, type: 'message' | 'system'} | null>(null);
   
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
@@ -40,7 +38,6 @@ const Feed: React.FC = () => {
   const [isMessagesOpen, setIsMessagesOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isBrowserOpen, setIsBrowserOpen] = useState(false);
-  const [isBeamOpen, setIsBeamOpen] = useState(false);
   
   const [viewingPulseGroup, setViewingPulseGroup] = useState<any | null>(null);
   const [targetUserForMessages, setTargetUserForMessages] = useState<any>(null);
@@ -49,127 +46,75 @@ const Feed: React.FC = () => {
 
   const currentUser = auth.currentUser;
 
-  // Monitorar Notificações para Bolinha Roxa
+  // Monitorar se o Push está ativo via OneSignal
   useEffect(() => {
-    if (!currentUser) return;
-    const q = query(collection(db, 'users', currentUser.uid, 'notifications'), where('read', '==', false), limit(1));
-    const unsub = onSnapshot(q, (snap) => {
-      setHasUnreadNotifications(!snap.empty);
-    });
-    return () => unsub();
-  }, [currentUser]);
-
-  // Listener para In-App Alerts (Novas Mensagens)
-  useEffect(() => {
-    if (!currentUser) return;
-    const q = query(
-      collection(db, 'notifications_in_app'),
-      where('recipientId', '==', currentUser.uid),
-      where('read', '==', false),
-      orderBy('timestamp', 'desc'),
-      limit(1)
-    );
-
-    const unsub = onSnapshot(q, (snap) => {
-      if (!snap.empty) {
-        const notif = snap.docs[0].data();
-        setInAppAlert({ show: true, title: notif.title, body: notif.body, type: notif.type || 'message' });
-        
-        // Auto-hide e marcar como lida
-        setTimeout(() => {
-          setInAppAlert(null);
-          updateDoc(doc(db, 'notifications_in_app', snap.docs[0].id), { read: true });
-        }, 5000);
-      }
-    });
-    return () => unsub();
-  }, [currentUser]);
-
-  // OneSignal logic... (mantida)
-  useEffect(() => {
-    const checkPushPermission = () => {
-      (window as any).OneSignalDeferred = (window as any).OneSignalDeferred || [];
-      (window as any).OneSignalDeferred.push(async (OneSignal: any) => {
+    const checkPermission = () => {
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      window.OneSignalDeferred.push(async (OneSignal: any) => {
         const permission = await OneSignal.Notifications.permission;
         if (permission !== 'granted') {
           setShowPushBanner(true);
-        } else {
-            if (currentUser) await OneSignal.login(currentUser.uid);
         }
       });
     };
-    checkPushPermission();
-  }, [currentUser]);
+    checkPermission();
+  }, []);
 
-  const handleEnablePush = async () => {
-    (window as any).OneSignalDeferred.push(async (OneSignal: any) => {
+  const handleEnablePush = () => {
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(async (OneSignal: any) => {
       try {
-        await OneSignal.Notifications.requestPermission();
-        setTimeout(async () => {
-          const pushUser = await OneSignal.User;
-          const pushId = pushUser?.pushSubscription?.id;
-          if (pushId && currentUser) {
-            await updateDoc(doc(db, 'users', currentUser.uid), {
-              oneSignalPlayerId: pushId,
-              pushEnabled: true,
-              lastPushSync: serverTimestamp()
-            });
+        // OBRIGATÓRIO: Prompt manual para navegadores mobile
+        await OneSignal.showSlidedownPrompt();
+        
+        // Listener para quando o usuário aceitar
+        OneSignal.Notifications.addEventListener("permissionChange", async (permission: any) => {
+          if (permission === 'granted') {
             setShowPushBanner(false);
+            console.log("Néos: Permissão de push concedida pelo usuário.");
           }
-        }, 2000);
-      } catch (err) { console.error(err); }
+        });
+      } catch (err) {
+        console.error("Erro ao solicitar push:", err);
+      }
     });
   };
 
   useEffect(() => {
+    if (!currentUser) return;
+    const q = query(collection(db, 'users', currentUser.uid, 'notifications'), where('read', '==', false), limit(1));
+    const unsub = onSnapshot(q, (snap) => setHasUnreadNotifications(!snap.empty));
+    return () => unsub();
+  }, [currentUser]);
+
+  useEffect(() => {
     if (viewMode === 'feed' && !viewingProfileId) {
       setLoading(true);
-      try {
-        const q = query(collection(db, 'posts'), orderBy('timestamp', 'desc'), limit(50));
-        const unsubscribe = onSnapshot(q, (snap) => {
-          const fetchedPosts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          const visiblePosts = fetchedPosts.filter(p => {
-              if (p.viewLimit && p.viewerCounts && currentUser) {
-                const myViews = p.viewerCounts[currentUser.uid] || 0;
-                if (myViews >= p.viewLimit && p.userId !== currentUser.uid) return false;
-              }
-              if (!p.isFriendOnly) return true;
-              if (p.userId === currentUser?.uid) return true;
-              return p.closeFriendsIds?.includes(currentUser?.uid);
-          });
-          setPosts(visiblePosts);
-          setLoading(false);
-        }, (err) => setLoading(false));
-        return () => unsubscribe();
-      } catch(e) { setLoading(false); }
+      const q = query(collection(db, 'posts'), orderBy('timestamp', 'desc'), limit(50));
+      const unsubscribe = onSnapshot(q, (snap) => {
+        setPosts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setLoading(false);
+      });
+      return () => unsubscribe();
     }
-  }, [viewMode, viewingProfileId, currentUser?.uid]);
+  }, [viewMode, viewingProfileId]);
 
   useEffect(() => {
     if (!currentUser) return;
     const fetchPulses = async () => {
-      try {
-        const followingRef = collection(db, 'users', currentUser.uid, 'following');
-        const followingSnap = await getDocs(followingRef);
-        const targetIds = [currentUser.uid, ...followingSnap.docs.map(d => d.id)];
-        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const q = query(collection(db, 'pulses'), where('createdAt', '>=', twentyFourHoursAgo), orderBy('createdAt', 'desc'));
-        return onSnapshot(q, async (snap) => {
-            const pulseList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            const filteredPulses = pulseList.filter((p: any) => targetIds.includes(p.authorId));
-            const grouped = new Map();
-            for (const pulse of filteredPulses as any[]) {
-                if (!grouped.has(pulse.authorId)) {
-                    const authorSnap = await getDoc(doc(db, 'users', pulse.authorId));
-                    if (authorSnap.exists()) {
-                        grouped.set(pulse.authorId, { author: { id: pulse.authorId, ...authorSnap.data() }, pulses: [] });
-                    }
-                }
-                if (grouped.has(pulse.authorId)) grouped.get(pulse.authorId).pulses.push(pulse);
-            }
-            setUsersWithPulses(Array.from(grouped.values()));
-        });
-      } catch(e) {}
+      const q = query(collection(db, 'pulses'), orderBy('createdAt', 'desc'), limit(20));
+      return onSnapshot(q, async (snap) => {
+          const grouped = new Map();
+          for (const d of snap.docs) {
+              const p = d.data();
+              if (!grouped.has(p.authorId)) {
+                  const u = await getDoc(doc(db, 'users', p.authorId));
+                  if (u.exists()) grouped.set(p.authorId, { author: { id: p.authorId, ...u.data() }, pulses: [] });
+              }
+              if (grouped.has(p.authorId)) grouped.get(p.authorId).pulses.push({id: d.id, ...p});
+          }
+          setUsersWithPulses(Array.from(grouped.values()));
+      });
     };
     fetchPulses();
   }, [currentUser]);
@@ -190,7 +135,22 @@ const Feed: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      {/* Alerta de Notificação In-App */}
+      {/* Banner de Ativação de Push Manual */}
+      {showPushBanner && (
+        <div className="fixed top-0 left-0 right-0 z-[1000] bg-indigo-600 p-3 text-center animate-fade-in">
+          <p className="text-white text-xs font-black uppercase tracking-widest flex items-center justify-center gap-4">
+            Ative as notificações para não perder nada!
+            <button 
+              onClick={handleEnablePush}
+              className="bg-white text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black hover:bg-zinc-100 active:scale-95 transition-all"
+            >
+              Ativar Agora
+            </button>
+            <button onClick={() => setShowPushBanner(false)} className="opacity-50 ml-2">&times;</button>
+          </p>
+        </div>
+      )}
+
       {inAppAlert && (
         <div className="fixed top-2 left-1/2 -translate-x-1/2 z-[2000] w-[95%] max-w-md animate-slide-down">
           <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-2xl border border-white/20 dark:border-zinc-800 p-4 rounded-[2rem] shadow-2xl flex items-center gap-4">
@@ -215,7 +175,6 @@ const Feed: React.FC = () => {
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M3 12l2-2m0 0l7-7 7-7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
                 <span>{t('header.home')}</span>
             </button>
-            {/* ... Demais botões desktop */}
         </nav>
       </div>
       
@@ -255,9 +214,7 @@ const Feed: React.FC = () => {
 
       <div className="lg:hidden"><BottomNav currentView={viewingProfileId ? 'profile' : viewMode} onChangeView={v => { setViewMode(v); setViewingProfileId(null); }} onCreateClick={() => setIsMenuOpen(true)} /></div>
 
-      {/* Modais existentes */}
       <CreateMenuModal isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onSelect={handleMenuSelect as any} />
-      <ParadiseCameraModal isOpen={isParadiseOpen} onClose={() => setIsParadiseOpen(false)} />
       <MessagesModal isOpen={isMessagesOpen} onClose={() => setIsMessagesOpen(false)} initialTargetUser={targetUserForMessages} initialConversationId={targetConversationId} />
       {viewingPulseGroup && <PulseViewerModal isOpen={!!viewingPulseGroup} pulses={viewingPulseGroup.pulses} authorInfo={viewingPulseGroup.author} initialPulseIndex={0} onClose={() => setViewingPulseGroup(null)} onDelete={() => {}} />}
       <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={imgs => { setSelectedMedia(imgs); setIsGalleryOpen(false); setIsCreatePostOpen(true); }} />

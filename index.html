@@ -34,7 +34,8 @@
       #root:empty::before { content: ""; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #0ea5e9; border-radius: 50%; animation: spin 1s linear infinite; }
       @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
     </style>
-    <!-- OneSignal SDK -->
+
+    <!-- OneSignal SDK v16 - EXCLUSIVE FOR PUSH -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -47,6 +48,7 @@
           },
           allowLocalhostAsSecureOrigin: true,
         });
+        console.log("Néos: OneSignal inicializado com sucesso.");
       });
     </script>
   </head>

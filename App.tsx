@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, StrictMode } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db, doc, updateDoc, serverTimestamp } from './firebase';
@@ -9,7 +8,6 @@ import { LanguageProvider } from './context/LanguageContext';
 import { CallProvider } from './context/CallContext';
 import CallUI from './components/call/CallUI';
 
-// Fixed TypeScript errors by declaring OneSignalDeferred on the window object
 declare global {
   interface Window {
     OneSignalDeferred: any[];
@@ -22,21 +20,28 @@ const AppContent: React.FC = () => {
   const [authPage, setAuthPage] = useState<'login' | 'signup'>('login');
 
   useEffect(() => {
+    // Limpeza de Service Workers antigos do Firebase para evitar conflitos
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const registration of registrations) {
+          if (registration.active && registration.active.scriptURL.includes('firebase-messaging-sw.js')) {
+            registration.unregister();
+            console.log("Néos: Service Worker do Firebase removido.");
+          }
+        }
+      });
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
 
-      // Sincronizar usuário logado com OneSignal External ID
       if (currentUser) {
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(async function(OneSignal: any) {
+          // Login no OneSignal usando o UID do Firebase para segmentação precisa
           await OneSignal.login(currentUser.uid);
-          console.log("Néos: Usuário sincronizado com OneSignal:", currentUser.uid);
-        });
-      } else {
-        window.OneSignalDeferred = window.OneSignalDeferred || [];
-        window.OneSignalDeferred.push(async function(OneSignal: any) {
-          await OneSignal.logout();
+          console.log("Néos: UID sincronizado com OneSignal Audience.");
         });
       }
     });
