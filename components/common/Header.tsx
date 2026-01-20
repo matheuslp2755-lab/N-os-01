@@ -112,7 +112,7 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
                         onClick={() => setIsSearchOverlayOpen(true)}
                         className="flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-full px-4 py-2 cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all max-w-[200px] w-full group"
                     >
-                        <svg className="w-4 h-4 text-zinc-400 mr-2 group-hover:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        <svg className="w-4 h-4 text-zinc-400 mr-2 group-focus-within:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                         <span className="text-zinc-400 text-sm font-medium truncate">Pesquisar...</span>
                     </div>
                 </div>
@@ -122,9 +122,9 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
                     
                     <div className="relative">
                         <button onClick={toggleActivity} className="relative hover:scale-110 transition-transform">
-                            <svg className={`w-7 h-7 ${hasUnread ? 'text-purple-600' : 'text-zinc-800 dark:text-zinc-200'}`} fill="currentColor" viewBox="0 0 24 24"><path d="M16.792 3.904A4.989 4.989 0 0 1 21.5 9.122c0 3.072-2.652 4.959-6.12 8.351C12.89 20.72 12.434 21 12 21s-.89-.28-1.38-.627C7.152 14.08 4.5 12.192 4.5 9.122a4.989 4.989 0 0 1 4.708-5.218 4.21 4.21 0 0 1 3.675 1.941c.84 1.175.98 1.763 1.12 1.763s.278-.588 1.118-1.763a4.21 4.21 0 0 1 3.675-1.941Z"></path></svg>
+                            <svg className={`w-7 h-7 ${hasUnread ? 'text-sky-500' : 'text-zinc-800 dark:text-zinc-200'}`} fill="currentColor" viewBox="0 0 24 24"><path d="M16.792 3.904A4.989 4.989 0 0 1 21.5 9.122c0 3.072-2.652 4.959-6.12 8.351C12.89 20.72 12.434 21 12 21s-.89-.28-1.38-.627C7.152 14.08 4.5 12.192 4.5 9.122a4.989 4.989 0 0 1 4.708-5.218 4.21 4.21 0 0 1 3.675 1.941c.84 1.175.98 1.763 1.12 1.763s.278-.588 1.118-1.763a4.21 4.21 0 0 1 3.675-1.941Z"></path></svg>
                             {hasUnread && (
-                                <span className="absolute -top-0.5 -right-0.5 block h-3 w-3 rounded-full bg-purple-500 border-2 border-white dark:border-black animate-pulse shadow-[0_0_10px_rgba(168,85,247,0.8)]"></span>
+                                <span className="absolute -top-0.5 -right-0.5 block h-3 w-3 rounded-full bg-sky-500 border-2 border-white dark:border-black animate-pulse shadow-[0_0_10px_rgba(14,165,233,0.8)]"></span>
                             )}
                         </button>
                         {isActivityDropdownOpen && (
