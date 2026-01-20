@@ -9,6 +9,7 @@ interface ParadiseCameraModalProps {
 
 type VibeEffect = 'ultra_analog' | 'cinematic_pro' | 'soft_pastel' | 'vhs_lofi';
 type LensMM = 24 | 35 | 50 | 85 | 101;
+type CamMode = 'photo' | 'video';
 
 interface EffectConfig {
     id: VibeEffect;
@@ -52,26 +53,61 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
     const [activeVibe, setActiveVibe] = useState<VibeEffect>('ultra_analog');
     const [lensMM, setLensMM] = useState<LensMM>(35);
-    const [capturedImages, setCapturedImages] = useState<string[]>([]);
+    const [camMode, setCamMode] = useState<CamMode>('photo');
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingSeconds, setRecordingSeconds] = useState(0);
+    const [capturedMedia, setCapturedMedia] = useState<{url: string, type: CamMode}[]>([]);
     const [viewingGallery, setViewingGallery] = useState(false);
-    const [selectedImage, setSelectedImage] = useState<string | null>(null);
+    const [selectedItem, setSelectedItem] = useState<{url: string, type: CamMode} | null>(null);
     const [showFlashAnim, setShowFlashAnim] = useState(false);
+    const [focusPos, setFocusPos] = useState({ x: 50, y: 50, active: false });
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const requestRef = useRef<number | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const chunksRef = useRef<Blob[]>([]);
+    const timerRef = useRef<number | null>(null);
 
-    // Fatores de zoom: Quanto maior o MM, menor a área capturada (mais zoom)
     const getLensZoom = (mm: LensMM) => {
         switch(mm) {
             case 24: return 1.0;
-            case 35: return 1.4;
-            case 50: return 2.0;
-            case 85: return 3.2;
-            case 101: return 4.5;
+            case 35: return 1.5;
+            case 50: return 2.2;
+            case 85: return 3.5;
+            case 101: return 5.0;
             default: return 1.0;
         }
+    };
+
+    const handleFocus = (e: React.MouseEvent | React.TouchEvent) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        let clientX, clientY;
+        if ('touches' in e) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+        const x = ((clientX - rect.left) / rect.width) * 100;
+        const y = ((clientY - rect.top) / rect.height) * 100;
+        setFocusPos({ x, y, active: true });
+        
+        // Simular o foco automático da lente
+        if (streamRef.current) {
+            const track = streamRef.current.getVideoTracks()[0];
+            const capabilities = track.getCapabilities() as any;
+            if (capabilities.focusMode) {
+                // Tentar foco real se o hardware suportar
+                track.applyConstraints({
+                    advanced: [{ focusMode: 'manual', pointsOfInterest: [{x: clientX, y: clientY}] }] as any
+                }).catch(() => {});
+            }
+        }
+
+        setTimeout(() => setFocusPos(prev => ({ ...prev, active: false })), 1000);
     };
 
     const applyAIPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
@@ -102,15 +138,12 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
             ctx.font = `bold ${Math.round(h * 0.035)}px "Courier New", monospace`;
             ctx.fillStyle = '#facc15';
-            ctx.shadowColor = 'black';
-            ctx.shadowBlur = 5;
+            ctx.shadowColor = 'black'; ctx.shadowBlur = 5;
             ctx.fillText(dateStr, w * 0.08, h * 0.92);
-
             ctx.font = `900 ${Math.round(h * 0.015)}px sans-serif`;
             ctx.fillStyle = 'rgba(255,255,255,0.6)';
-            ctx.textAlign = 'right';
-            ctx.letterSpacing = "4px";
-            ctx.fillText("PARADISE ENGINE PRO", w * 0.92, h * 0.92);
+            ctx.textAlign = 'right'; ctx.letterSpacing = "4px";
+            ctx.fillText("PARADISE OPTICS PRO", w * 0.92, h * 0.92);
         }
         ctx.restore();
     };
@@ -122,17 +155,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             requestRef.current = requestAnimationFrame(renderLoop);
             return;
         }
-
         const ctx = canvas.getContext('2d', { alpha: false });
         if (ctx) {
             if (canvas.width !== video.videoWidth) canvas.width = video.videoWidth;
             if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
-            
             ctx.save();
             if (facingMode === 'user') { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             ctx.restore();
-
             applyAIPipeline(ctx, canvas.width, canvas.height, CAMERA_ENGINE_PACKS[activeVibe], false);
         }
         requestRef.current = requestAnimationFrame(renderLoop);
@@ -142,7 +172,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } }
+                video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+                audio: true
             });
             streamRef.current = stream;
             if (videoRef.current) {
@@ -158,60 +189,64 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         return () => {
             if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
             if (requestRef.current) cancelAnimationFrame(requestRef.current);
+            if (timerRef.current) clearInterval(timerRef.current);
         };
     }, [isOpen, startCamera]);
 
     const handleCapture = () => {
+        if (camMode === 'video') {
+            if (isRecording) stopRecording(); else startRecording();
+            return;
+        }
+
         const canvas = canvasRef.current;
         if (!canvas) return;
-
         setShowFlashAnim(true);
         setTimeout(() => setShowFlashAnim(false), 100);
 
         const zoom = getLensZoom(lensMM);
-        const vw = canvas.width;
-        const vh = canvas.height;
-        
-        // CÁLCULO ESTREITO DO QUADRADO (O QUE O USUÁRIO VÊ NA MOLDURA)
-        // A moldura ocupa 90% da largura dividida pelo zoom.
-        const sw = (vw * 0.9) / zoom; 
-        const sh = sw * (4/3); // Proporção 3:4
-        const sx = (vw - sw) / 2;
-        const sy = (vh - sh) / 2;
+        const targetWidth = canvas.width / zoom;
+        const targetHeight = targetWidth * (4/3);
+        const sx = (canvas.width - targetWidth) / 2;
+        const sy = (canvas.height - targetHeight) / 2;
 
         const outCanvas = document.createElement('canvas');
-        outCanvas.width = 1200; 
-        outCanvas.height = 1600;
+        outCanvas.width = 1200; outCanvas.height = 1600;
         const oCtx = outCanvas.getContext('2d');
-        
         if (oCtx) {
-            // CAPTURA APENAS A ÁREA DA MOLDURA
-            oCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, 1200, 1600);
+            oCtx.drawImage(canvas, sx, sy, targetWidth, targetHeight, 0, 0, 1200, 1600);
             applyAIPipeline(oCtx, 1200, 1600, CAMERA_ENGINE_PACKS[activeVibe], true);
-            setCapturedImages(prev => [outCanvas.toDataURL('image/jpeg', 0.95), ...prev]);
+            setCapturedMedia(prev => [{url: outCanvas.toDataURL('image/jpeg', 0.95), type: 'photo'}, ...prev]);
         }
     };
 
-    const discardImage = (img: string) => {
-        if (window.confirm("Descartar esta foto?")) {
-            setCapturedImages(prev => prev.filter(i => i !== img));
-            setSelectedImage(null);
-        }
+    const startRecording = () => {
+        if (!streamRef.current) return;
+        chunksRef.current = [];
+        const recorder = new MediaRecorder(streamRef.current, { mimeType: 'video/webm;codecs=vp9' });
+        mediaRecorderRef.current = recorder;
+        recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+        recorder.onstop = () => {
+            const blob = new Blob(chunksRef.current, { type: 'video/mp4' });
+            setCapturedMedia(prev => [{url: URL.createObjectURL(blob), type: 'video'}, ...prev]);
+        };
+        recorder.start();
+        setIsRecording(true);
+        setRecordingSeconds(0);
+        timerRef.current = window.setInterval(() => setRecordingSeconds(s => s + 1), 1000);
     };
 
-    const saveImage = (img: string) => {
-        const link = document.createElement('a');
-        link.href = img;
-        link.download = `Paradise_Cam_${Date.now()}.jpg`;
-        link.click();
+    const stopRecording = () => {
+        mediaRecorderRef.current?.stop();
+        setIsRecording(false);
+        if (timerRef.current) clearInterval(timerRef.current);
     };
 
     if (!isOpen) return null;
-
     const currentZoom = getLensZoom(lensMM);
 
     return (
-        <div className="fixed inset-0 bg-black z-[600] flex flex-col overflow-hidden text-white font-sans touch-none">
+        <div className="fixed inset-0 bg-black z-[600] flex flex-col overflow-hidden text-white font-sans touch-none select-none">
             {showFlashAnim && <div className="fixed inset-0 z-[1000] bg-white"></div>}
 
             <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-50">
@@ -226,29 +261,50 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 </button>
             </header>
 
-            <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden">
+            <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden" onMouseDown={handleFocus}>
                 <video ref={videoRef} className="hidden" playsInline muted />
                 
-                <div className="w-full h-full flex items-center justify-center transition-transform duration-500 ease-out" style={{ transform: `scale(${currentZoom})` }}>
+                <div className="w-full h-full flex items-center justify-center transition-transform duration-700 ease-in-out" style={{ transform: `scale(${currentZoom})` }}>
                     <canvas ref={canvasRef} className="w-full h-full object-cover" />
                 </div>
 
-                {/* MOLDURA DE RECORTE: APENAS O QUE ESTÁ DENTRO DISSO É SALVO */}
+                {/* Retícula de Foco Automático */}
+                {focusPos.active && (
+                    <div 
+                        className="absolute w-16 h-16 border-2 border-sky-400 rounded-lg animate-focus-pulse pointer-events-none"
+                        style={{ left: `${focusPos.x}%`, top: `${focusPos.y}%`, transform: 'translate(-50%, -50%)' }}
+                    >
+                        <div className="absolute inset-0 border border-sky-400/30 scale-150 rounded-lg"></div>
+                    </div>
+                )}
+
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div 
-                        className="border-2 border-white/50 rounded-[3rem] shadow-[0_0_0_2000px_rgba(0,0,0,0.8)] transition-all duration-500"
-                        style={{ width: `${90 / currentZoom}%`, aspectRatio: '3/4' }}
+                        className="border-4 border-white/30 rounded-[3rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)] transition-all duration-500"
+                        style={{ width: `${85 / currentZoom}%`, aspectRatio: '3/4' }}
                     >
-                         <div className="absolute bottom-6 left-6 opacity-40 flex flex-col gap-0.5">
-                            <span className="text-[10px] font-black tracking-widest">{lensMM}MM OPTIC</span>
-                            <span className="text-[8px] font-bold">RECORTE ATIVO</span>
-                         </div>
+                        {isRecording && (
+                            <div className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-red-600 px-4 py-1.5 rounded-full shadow-lg">
+                                <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                                <span className="text-[10px] font-black uppercase tracking-widest">{Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}</span>
+                            </div>
+                        )}
+                        <div className="absolute bottom-6 left-6 opacity-40 flex flex-col gap-0.5">
+                            <span className="text-[10px] font-black tracking-widest">{lensMM}MM AF ACTIVE</span>
+                            <span className="text-[8px] font-bold uppercase">Sensor Paradise Pro</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <footer className="bg-black px-4 pb-12 pt-6 border-t border-white/5 z-50">
-                <div className="flex flex-col gap-8">
+            <footer className="bg-black px-4 pb-12 pt-4 border-t border-white/5 z-50">
+                <div className="flex flex-col gap-6">
+                    {/* Seletor de Modo */}
+                    <div className="flex justify-center gap-8 mb-2">
+                        <button onClick={() => setCamMode('photo')} className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'photo' ? 'text-white' : 'text-zinc-600'}`}>Foto</button>
+                        <button onClick={() => setCamMode('video')} className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'video' ? 'text-red-500' : 'text-zinc-600'}`}>Vídeo</button>
+                    </div>
+
                     <div className="flex gap-4 overflow-x-auto no-scrollbar py-2 px-2 items-center justify-center">
                         {Object.values(CAMERA_ENGINE_PACKS).map(eff => (
                             <button key={eff.id} onClick={() => setActiveVibe(eff.id)} className={`flex flex-col items-center shrink-0 transition-all ${activeVibe === eff.id ? 'scale-110 opacity-100' : 'opacity-30'}`}>
@@ -257,12 +313,20 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                             </button>
                         ))}
                     </div>
+
                     <div className="flex items-center justify-between px-10">
                         <button onClick={() => setViewingGallery(true)} className="w-14 h-14 rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden shadow-lg active:scale-95 transition-all">
-                            {capturedImages.length > 0 && <img src={capturedImages[0]} className="w-full h-full object-cover" />}
+                            {capturedMedia.length > 0 && (
+                                capturedMedia[0].type === 'video' 
+                                ? <video src={capturedMedia[0].url} className="w-full h-full object-cover" /> 
+                                : <img src={capturedMedia[0].url} className="w-full h-full object-cover" />
+                            )}
                         </button>
-                        <button onClick={handleCapture} className="w-20 h-20 rounded-full border-4 border-white/30 p-1 active:scale-90 transition-all shadow-[0_0_40px_rgba(255,255,255,0.1)]">
-                            <div className="w-full h-full rounded-full bg-white"></div>
+                        <button 
+                            onClick={handleCapture} 
+                            className={`w-20 h-20 rounded-full border-4 p-1 active:scale-90 transition-all shadow-[0_0_40px_rgba(255,255,255,0.1)] ${isRecording ? 'border-red-500' : 'border-white/30'}`}
+                        >
+                            <div className={`w-full h-full rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 scale-75 rounded-lg' : 'bg-white'}`}></div>
                         </button>
                         <div className="w-14"></div>
                     </div>
@@ -271,41 +335,48 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
             {viewingGallery && (
                 <div className="fixed inset-0 z-[700] bg-black flex flex-col animate-fade-in">
-                    <header className="p-6 flex justify-between items-center border-b border-white/10">
+                    <header className="p-6 flex justify-between items-center border-b border-white/10 bg-black/95">
                         <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Voltar</button>
-                        <h3 className="font-black uppercase tracking-[0.3em] text-xs text-zinc-500">Galeria Paraíso</h3>
+                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Paradise Roll</h3>
                         <div className="w-10"></div>
                     </header>
                     <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5">
-                        {capturedImages.map((img, i) => (
-                            <div key={i} className="aspect-[3/4] cursor-pointer active:opacity-70" onClick={() => setSelectedImage(img)}>
-                                <img src={img} className="w-full h-full object-cover" />
+                        {capturedMedia.map((item, i) => (
+                            <div key={i} className="aspect-[3/4] cursor-pointer active:opacity-70 relative" onClick={() => setSelectedItem(item)}>
+                                {item.type === 'video' 
+                                ? <video src={item.url} className="w-full h-full object-cover" /> 
+                                : <img src={item.url} className="w-full h-full object-cover" />}
+                                {item.type === 'video' && <div className="absolute top-2 right-2"><svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" /><path d="M14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" /></svg></div>}
                             </div>
                         ))}
                     </div>
                 </div>
             )}
 
-            {selectedImage && (
-                <div className="fixed inset-0 z-[800] bg-black flex flex-col animate-fade-in">
-                    <header className="p-6 flex justify-between items-center z-10">
-                        <button onClick={() => setSelectedImage(null)} className="p-2 bg-black/40 rounded-full">
-                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M15 19l-7-7 7-7" strokeWidth={2.5}/></svg>
+            {selectedItem && (
+                <div className="fixed inset-0 z-[800] bg-black flex flex-col animate-fade-in p-6 items-center justify-center">
+                    <div className="absolute top-10 left-10 z-10">
+                        <button onClick={() => setSelectedItem(null)} className="p-3 bg-white/10 backdrop-blur-xl rounded-full border border-white/10">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M15 19l-7-7 7-7" /></svg>
                         </button>
-                    </header>
-                    <div className="flex-grow flex items-center justify-center p-4">
-                        <img src={selectedImage} className="max-w-full max-h-full object-contain rounded-[2rem] shadow-2xl" alt="Full" />
                     </div>
-                    <footer className="p-8 flex gap-4">
-                        <button onClick={() => discardImage(selectedImage)} className="flex-1 py-4 rounded-2xl bg-zinc-900 text-red-500 font-black uppercase text-[10px] tracking-widest border border-red-500/20 active:scale-95 transition-all">Descartar</button>
-                        <button onClick={() => saveImage(selectedImage)} className="flex-1 py-4 rounded-2xl bg-white text-black font-black uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all">Salvar Foto</button>
-                    </footer>
+                    <div className="w-full max-w-sm aspect-[3/4] rounded-[2.5rem] overflow-hidden shadow-2xl bg-zinc-900">
+                        {selectedItem.type === 'video' 
+                        ? <video src={selectedItem.url} className="w-full h-full object-cover" controls autoPlay loop /> 
+                        : <img src={selectedItem.url} className="w-full h-full object-cover" />}
+                    </div>
+                    <div className="mt-12 flex gap-4 w-full max-w-sm">
+                        <button onClick={() => { setCapturedMedia(prev => prev.filter(i => i.url !== selectedItem.url)); setSelectedItem(null); }} className="flex-1 py-4 rounded-2xl bg-zinc-900 text-red-500 font-black uppercase text-[10px] tracking-widest border border-red-500/20 active:scale-95 transition-all">Apagar</button>
+                        <button onClick={() => { const a = document.createElement('a'); a.href = selectedItem.url; a.download = `Paradise_${Date.now()}`; a.click(); }} className="flex-1 py-4 rounded-2xl bg-white text-black font-black uppercase text-[10px] tracking-widest shadow-2xl active:scale-95 transition-all">Salvar</button>
+                    </div>
                 </div>
             )}
 
             <style>{`
                 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes focus-pulse { 0% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; } }
                 .animate-fade-in { animation: fade-in 0.3s ease-out; }
+                .animate-focus-pulse { animation: focus-pulse 0.3s ease-out forwards; }
                 .no-scrollbar::-webkit-scrollbar { display: none; }
             `}</style>
         </div>
