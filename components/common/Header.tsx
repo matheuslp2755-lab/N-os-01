@@ -24,7 +24,7 @@ interface HeaderProps {
     hasUnread?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages, onOpenBrowser, hasUnread }) => {
+const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages, onOpenBrowser }) => {
     const { t } = useLanguage();
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -32,13 +32,16 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
     const [isActivityDropdownOpen, setIsActivityDropdownOpen] = useState(false);
     const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
     const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [unreadCount, setUnreadCount] = useState(0);
     const currentUser = auth.currentUser;
 
     useEffect(() => {
         if (!currentUser) return;
         const q = query(collection(db, 'users', currentUser.uid, 'notifications'), orderBy('timestamp', 'desc'), limit(30));
         return onSnapshot(q, (snapshot) => {
-            setNotifications(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Notification)));
+            const items = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Notification));
+            setNotifications(items);
+            setUnreadCount(items.filter(n => !n.read).length);
         });
     }, [currentUser]);
 
@@ -69,7 +72,7 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
     }, [searchQuery]);
 
     const markAllAsRead = async () => {
-        if (!currentUser) return;
+        if (!currentUser || unreadCount === 0) return;
         const batch = writeBatch(db);
         notifications.forEach(n => {
             if (!n.read) {
@@ -77,6 +80,7 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
             }
         });
         await batch.commit();
+        setUnreadCount(0);
     };
 
     const toggleActivity = () => {
@@ -97,6 +101,7 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
             case 'like_pulse': return 'curtiu seu pulse.';
             case 'like_vibe': return 'curtiu seu vibe.';
             case 'mention_comment': return 'mencionou você em um comentário.';
+            case 'follow_request': return 'enviou uma solicitação para te seguir.';
             default: return 'interagiu com você.';
         }
     };
@@ -107,7 +112,6 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
                 <div className="flex items-center gap-4 flex-1">
                     <h1 onClick={onGoHome} className="text-3xl cursor-pointer font-black bg-gradient-to-r from-indigo-500 via-purple-600 to-pink-500 text-transparent bg-clip-text tracking-tighter italic shrink-0">Néos</h1>
                     
-                    {/* Barra de pesquisa compacta ao lado do logo */}
                     <div 
                         onClick={() => setIsSearchOverlayOpen(true)}
                         className="flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-full px-4 py-2 cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all max-w-[200px] w-full group"
@@ -122,19 +126,25 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
                     
                     <div className="relative">
                         <button onClick={toggleActivity} className="relative hover:scale-110 transition-transform">
-                            <svg className={`w-7 h-7 ${hasUnread ? 'text-sky-500' : 'text-zinc-800 dark:text-zinc-200'}`} fill="currentColor" viewBox="0 0 24 24"><path d="M16.792 3.904A4.989 4.989 0 0 1 21.5 9.122c0 3.072-2.652 4.959-6.12 8.351C12.89 20.72 12.434 21 12 21s-.89-.28-1.38-.627C7.152 14.08 4.5 12.192 4.5 9.122a4.989 4.989 0 0 1 4.708-5.218 4.21 4.21 0 0 1 3.675 1.941c.84 1.175.98 1.763 1.12 1.763s.278-.588 1.118-1.763a4.21 4.21 0 0 1 3.675-1.941Z"></path></svg>
-                            {hasUnread && (
-                                <span className="absolute -top-0.5 -right-0.5 block h-3 w-3 rounded-full bg-sky-500 border-2 border-white dark:border-black animate-pulse shadow-[0_0_10px_rgba(14,165,233,0.8)]"></span>
+                            <svg className={`w-7 h-7 ${unreadCount > 0 ? 'text-indigo-500' : 'text-zinc-800 dark:text-zinc-200'}`} fill="currentColor" viewBox="0 0 24 24"><path d="M16.792 3.904A4.989 4.989 0 0 1 21.5 9.122c0 3.072-2.652 4.959-6.12 8.351C12.89 20.72 12.434 21 12 21s-.89-.28-1.38-.627C7.152 14.08 4.5 12.192 4.5 9.122a4.989 4.989 0 0 1 4.708-5.218 4.21 4.21 0 0 1 3.675 1.941c.84 1.175.98 1.763 1.12 1.763s.278-.588 1.118-1.763a4.21 4.21 0 0 1 3.675-1.941Z"></path></svg>
+                            {unreadCount > 0 && (
+                                <span className="absolute -top-0.5 -right-0.5 block h-3 w-3 rounded-full bg-indigo-500 border-2 border-white dark:border-black animate-pulse shadow-[0_0_10px_rgba(99,102,241,0.8)]"></span>
                             )}
                         </button>
                         {isActivityDropdownOpen && (
                             <div className="absolute right-0 top-full mt-4 w-80 bg-white dark:bg-zinc-950 rounded-3xl shadow-2xl border dark:border-zinc-800 z-50 max-h-[70vh] overflow-y-auto no-scrollbar animate-fade-in">
+                                <div className="p-4 border-b dark:border-zinc-900 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50">
+                                    <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Notificações</h4>
+                                    {unreadCount > 0 && <span className="text-[9px] bg-indigo-500 text-white px-2 py-0.5 rounded-full font-bold">{unreadCount} novas</span>}
+                                </div>
                                 {notifications.length > 0 ? notifications.map(n => (
-                                    <div key={n.id} onClick={() => { onSelectUser(n.fromUserId); setIsActivityDropdownOpen(false); }} className="flex items-start p-4 hover:bg-zinc-50 dark:hover:bg-zinc-900 border-b last:border-0 dark:border-zinc-900 transition-colors cursor-pointer">
+                                    <div key={n.id} onClick={() => { onSelectUser(n.fromUserId); setIsActivityDropdownOpen(false); }} className={`flex items-start p-4 hover:bg-zinc-50 dark:hover:bg-zinc-900 border-b last:border-0 dark:border-zinc-900 transition-colors cursor-pointer ${!n.read ? 'bg-indigo-50/30 dark:bg-indigo-500/5' : ''}`}>
                                         <img src={n.fromUserAvatar} className="w-10 h-10 rounded-full object-cover shrink-0 border dark:border-zinc-700"/>
                                         <div className="ml-3 text-xs flex-grow">
                                             <p className="leading-snug"><b>{n.fromUsername}</b> {getNotificationText(n)}</p>
+                                            <p className="text-[9px] text-zinc-400 mt-1 uppercase font-bold">Há alguns instantes</p>
                                         </div>
+                                        {!n.read && <div className="w-2 h-2 rounded-full bg-indigo-500 self-center"></div>}
                                     </div>
                                 )) : <div className="p-10 text-center text-xs font-black uppercase text-zinc-400">Nenhuma atividade</div>}
                             </div>
@@ -145,7 +155,6 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
                 </nav>
             </div>
 
-            {/* Tela de Pesquisa Fullscreen */}
             {isSearchOverlayOpen && (
                 <div className="fixed inset-0 bg-white dark:bg-black z-[100] animate-fade-in flex flex-col">
                     <header className="flex items-center gap-4 p-4 border-b dark:border-zinc-800 shrink-0">

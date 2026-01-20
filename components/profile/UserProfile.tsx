@@ -170,6 +170,18 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
             const theirFollowers = doc(db, 'users', userId, 'followers', currentUser.uid);
             batch.set(myFollowing, { username: user?.username || 'User', avatar: user?.avatar || '', timestamp: serverTimestamp() });
             batch.set(theirFollowers, { username: currentUser.displayName || 'User', avatar: currentUser.photoURL || '', timestamp: serverTimestamp() });
+            
+            // Criar Notificação para o destinatário
+            const notificationRef = doc(collection(db, 'users', userId, 'notifications'));
+            batch.set(notificationRef, {
+                type: 'follow',
+                fromUserId: currentUser.uid,
+                fromUsername: currentUser.displayName,
+                fromUserAvatar: currentUser.photoURL,
+                timestamp: serverTimestamp(),
+                read: false
+            });
+
             await batch.commit();
             setIsFollowing(true);
         }

@@ -76,7 +76,7 @@ const Feed: React.FC = () => {
   useEffect(() => {
     if (!currentUser) return;
     const fetchPulses = async () => {
-      const q = query(collection(db, 'pulses'), orderBy('createdAt', 'desc'), limit(20));
+      const q = query(collection(db, 'pulses'), orderBy('createdAt', 'desc'), limit(50));
       return onSnapshot(q, async (snap) => {
           const grouped = new Map();
           for (const d of snap.docs) {
@@ -98,11 +98,12 @@ const Feed: React.FC = () => {
     setViewMode('profile');
   };
 
-  const handleMenuSelect = (type: 'post' | 'pulse' | 'vibe') => {
+  const handleMenuSelect = (type: 'post' | 'pulse' | 'vibe' | 'paradise') => {
     switch (type) {
         case 'post': setIsGalleryOpen(true); break;
         case 'pulse': setIsCreatePulseOpen(true); break;
         case 'vibe': setIsCreateVibeOpen(true); break;
+        case 'paradise': setIsParadiseOpen(true); break;
     }
   };
 
@@ -118,6 +119,14 @@ const Feed: React.FC = () => {
           if (m.preview && m.preview.startsWith('blob:')) URL.revokeObjectURL(m.preview);
       });
       setSelectedMedia([]);
+  };
+
+  const handlePulseDeleted = async (pulse: any) => {
+      if (!currentUser || currentUser.uid !== pulse.authorId) return;
+      if (window.confirm("Deseja apagar este Pulse?")) {
+          await deleteDoc(doc(db, 'pulses', pulse.id));
+          setViewingPulseGroup(null);
+      }
   };
 
   return (
@@ -145,6 +154,10 @@ const Feed: React.FC = () => {
             <button onClick={() => { setViewMode('feed'); setViewingProfileId(null); }} className={`flex items-center gap-4 p-3 rounded-2xl ${viewMode === 'feed' && !viewingProfileId ? 'font-bold bg-zinc-50 dark:bg-zinc-900' : ''}`}>
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M3 12l2-2m0 0l7-7 7-7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
                 <span>{t('header.home')}</span>
+            </button>
+            <button onClick={() => setIsParadiseOpen(true)} className="flex items-center gap-4 p-3 rounded-2xl text-sky-500 font-bold hover:bg-sky-50 dark:hover:bg-sky-950/20 transition-all">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /></svg>
+                <span>Câmera do Paraíso</span>
             </button>
         </nav>
       </div>
@@ -187,7 +200,17 @@ const Feed: React.FC = () => {
 
       <CreateMenuModal isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onSelect={handleMenuSelect as any} />
       <MessagesModal isOpen={isMessagesOpen} onClose={() => setIsMessagesOpen(false)} initialTargetUser={targetUserForMessages} initialConversationId={targetConversationId} />
-      {viewingPulseGroup && <PulseViewerModal isOpen={!!viewingPulseGroup} pulses={viewingPulseGroup.pulses} authorInfo={viewingPulseGroup.author} initialPulseIndex={0} onClose={() => setViewingPulseGroup(null)} onDelete={() => {}} />}
+      {viewingPulseGroup && (
+          <PulseViewerModal 
+            isOpen={!!viewingPulseGroup} 
+            pulses={viewingPulseGroup.pulses} 
+            authorInfo={viewingPulseGroup.author} 
+            initialPulseIndex={0} 
+            onClose={() => setViewingPulseGroup(null)} 
+            onDelete={handlePulseDeleted} 
+            onViewProfile={handleSelectUser}
+          />
+      )}
       
       <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={handleImagesConfirmed} />
       <CreatePostModal 
