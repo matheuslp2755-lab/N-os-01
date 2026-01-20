@@ -22,7 +22,6 @@ import {
   increment
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject, uploadString } from 'firebase/storage';
-import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBscsAkO_yJYfVVtCBh3rNF8Cm51_HLW54",
@@ -38,15 +37,11 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
-const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
 
 export { 
   auth, 
   db,
   storage,
-  messaging,
-  getToken,
-  onMessage,
   collection,
   query,
   where,

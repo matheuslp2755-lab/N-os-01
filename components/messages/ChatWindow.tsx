@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
     auth, db, doc, collection, query, orderBy, onSnapshot, serverTimestamp, 
-    updateDoc, addDoc, storage, storageRef, uploadBytes, getDownloadURL, deleteDoc, getDocs 
+    updateDoc, addDoc, storage, storageRef, uploadBytes, getDownloadURL, deleteDoc 
 } from '../../firebase';
 import { useLanguage } from '../../context/LanguageContext';
 import { useCall } from '../../context/CallContext';
@@ -36,29 +36,6 @@ const ChatWindow: React.FC<{ conversationId: string | null; onBack: () => void; 
 
     useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-    /**
-     * LÓGICA DE NOTIFICAÇÃO PUSH (CLIENT-SIDE TRIGGER)
-     * Como o projeto não possui um backend Node.js dedicado rodando Admin SDK em tempo real,
-     * implementamos o trigger aqui para notificar o destinatário.
-     */
-    const triggerPushNotification = async (recipientId: string, messageText: string) => {
-        try {
-            // 1. Buscar todos os tokens do destinatário
-            const tokensSnap = await getDocs(collection(db, 'users', recipientId, 'fcm_tokens'));
-            const tokens = tokensSnap.docs.map(d => d.data().token);
-
-            if (tokens.length === 0) return;
-
-            // 2. Enviar via Cloud Function (ou API do Firebase se configurada)
-            // Nota: Em um ambiente puramente client-side, o ideal é usar as Cloud Functions
-            // definidas no functions/index.ts que já observam a coleção 'conversations'.
-            // Caso as Functions não estejam deployadas, a notificação não chegará.
-            console.log(`Néos FCM: Mensagem enviada para ${recipientId}. Aguardando trigger da Cloud Function.`);
-        } catch (err) {
-            console.error("Erro ao preparar notificação push:", err);
-        }
-    };
-
     const sendMessage = async (data: { text?: string, mediaUrl?: string, mediaType?: string, location?: any }) => {
         if (!conversationId || !currentUser || !convData) return;
 
@@ -70,10 +47,8 @@ const ChatWindow: React.FC<{ conversationId: string | null; onBack: () => void; 
             ...data
         };
 
-        // Salvar mensagem no Firestore
         await addDoc(collection(db, 'conversations', conversationId, 'messages'), msgPayload);
         
-        // Atualizar última mensagem na conversa
         await updateDoc(doc(db, 'conversations', conversationId), {
             lastMessage: { 
                 text: data.text || `Enviou um(a) ${data.mediaType || 'mídia'}`, 
@@ -83,10 +58,7 @@ const ChatWindow: React.FC<{ conversationId: string | null; onBack: () => void; 
             timestamp: serverTimestamp()
         });
 
-        // Trigger de notificação (para garantir que o sistema de Cloud Functions capture o evento)
-        if (otherUserId) {
-            triggerPushNotification(otherUserId, data.text || 'Mídia enviada');
-        }
+        // Néos OneSignal: A notificação será disparada via Cloud Function observando o Firestore
     };
 
     const handleDeleteMessage = async (messageId: string) => {

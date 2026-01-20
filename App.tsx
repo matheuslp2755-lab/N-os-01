@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, StrictMode } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db, doc, updateDoc, serverTimestamp, messaging, getToken, setDoc } from './firebase';
+import { auth, db, doc, updateDoc, serverTimestamp } from './firebase';
 import Login from './components/Login';
 import SignUp from './context/SignUp';
 import Feed from './components/Feed';
@@ -8,7 +9,12 @@ import { LanguageProvider } from './context/LanguageContext';
 import { CallProvider } from './context/CallContext';
 import CallUI from './components/call/CallUI';
 
-const VAPID_KEY = "lSw8bku7Z9y7-520kNooBcOJl2OGYWRnjnYcj23kZaI";
+// Fixed TypeScript errors by declaring OneSignalDeferred on the window object
+declare global {
+  interface Window {
+    OneSignalDeferred: any[];
+  }
+}
 
 const AppContent: React.FC = () => {
   const [user, setUser] = useState<any | null>(null);
@@ -16,52 +22,23 @@ const AppContent: React.FC = () => {
   const [authPage, setAuthPage] = useState<'login' | 'signup'>('login');
 
   useEffect(() => {
-    if (!user || !messaging) return;
-
-    const setupNotifications = async () => {
-      try {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-          // Registro explícito do service worker para o FCM
-          const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-          
-          const token = await getToken(messaging, { 
-            vapidKey: VAPID_KEY,
-            serviceWorkerRegistration: registration
-          });
-
-          if (token) {
-            console.log("Néos FCM: Token capturado:", token);
-            
-            // Gerar ID único para este navegador/dispositivo
-            const deviceId = btoa(navigator.userAgent).substring(0, 32); 
-            const tokenRef = doc(db, 'users', user.uid, 'fcm_tokens', deviceId);
-            
-            await setDoc(tokenRef, {
-              token: token,
-              platform: 'web',
-              lastUpdated: serverTimestamp(),
-              userAgent: navigator.userAgent
-            });
-
-            await updateDoc(doc(db, 'users', user.uid), {
-              pushEnabled: true,
-              lastTokenSync: serverTimestamp()
-            });
-          }
-        }
-      } catch (err) {
-        console.error("Néos FCM Error:", err);
-      }
-    };
-
-    setupNotifications();
-  }, [user]);
-
-  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
+
+      // Sincronizar usuário logado com OneSignal External ID
+      if (currentUser) {
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        window.OneSignalDeferred.push(async function(OneSignal: any) {
+          await OneSignal.login(currentUser.uid);
+          console.log("Néos: Usuário sincronizado com OneSignal:", currentUser.uid);
+        });
+      } else {
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        window.OneSignalDeferred.push(async function(OneSignal: any) {
+          await OneSignal.logout();
+        });
+      }
     });
     return () => unsubscribe();
   }, []);
