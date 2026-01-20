@@ -1,1 +1,1 @@
-importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDKWorker.js');
+// OneSignal desativado e removido do projeto Néos.

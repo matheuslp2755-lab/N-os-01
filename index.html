@@ -7,57 +7,6 @@
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#000000" />
     
-    <!-- OneSignal Web SDK v16 -->
-    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-    <script>
-      window.OneSignalDeferred = window.OneSignalDeferred || [];
-      OneSignalDeferred.push(async function(OneSignal) {
-        await OneSignal.init({
-          appId: "e1dcfeb7-6f34-440a-b65c-f61e2b3253a2",
-          safari_web_id: "web.onesignal.auto.5e2915a8-1095-4900-b2af-7b25bf2970dd",
-          notifyButton: { 
-            enable: false 
-          },
-          allowLocalhostAsSecureOrigin: true,
-          serviceWorkerPath: "OneSignalSDKWorker.js"
-        });
-
-        // FUNÇÃO DE ATIVAÇÃO EXPLÍCITA
-        const activatePushSubscription = async () => {
-          try {
-            const permission = Notification.permission;
-            console.log("Néos OneSignal: Verificando permissão nativa:", permission);
-
-            if (permission === "granted") {
-              console.log("Néos OneSignal: Permissão concedida. Executando optIn()...");
-              await OneSignal.User.PushSubscription.optIn();
-              
-              const subscriptionId = OneSignal.User.PushSubscription.id;
-              if (subscriptionId) {
-                console.log("Néos OneSignal: Assinatura ativa com sucesso:", subscriptionId);
-              }
-            }
-          } catch (err) {
-            console.error("Néos OneSignal: Erro ao ativar assinatura:", err);
-          }
-        };
-
-        activatePushSubscription();
-
-        OneSignal.Notifications.addEventListener("permissionChange", async (permission) => {
-          console.log("Néos OneSignal: Mudança de permissão detectada:", permission);
-          if (permission) {
-            await OneSignal.User.PushSubscription.optIn();
-            console.log("Néos OneSignal: Opt-In realizado após permissão concedida.");
-          }
-        });
-
-        OneSignal.User.PushSubscription.addEventListener("change", (event) => {
-          console.log("Néos OneSignal: Estado da assinatura mudou:", event.current);
-        });
-      });
-    </script>
-
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="importmap">
 {
@@ -69,14 +18,15 @@
     "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
     "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js",
     "firebase/storage": "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js",
+    "firebase/messaging": "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js",
     "@google/genai": "https://esm.sh/@google/genai@1.29.1",
     "heic2any": "https://esm.sh/heic2any@0.0.4",
     "axios": "https://esm.sh/axios@^1.13.2",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
     "firebase/": "https://esm.sh/firebase@^12.8.0/",
-    "firebase-functions": "https://esm.sh/firebase-functions@^7.0.3",
-    "firebase-admin": "https://esm.sh/firebase-admin@^13.6.0"
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "firebase-admin": "https://esm.sh/firebase-admin@^13.6.0",
+    "firebase-functions": "https://esm.sh/firebase-functions@^7.0.3"
   }
 }
 </script>

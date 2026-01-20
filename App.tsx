@@ -1,6 +1,6 @@
 import React, { useState, useEffect, StrictMode } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db, doc, updateDoc, serverTimestamp } from './firebase';
+import { auth, db, doc, updateDoc, serverTimestamp, messaging, getToken } from './firebase';
 import Login from './components/Login';
 import SignUp from './context/SignUp';
 import Feed from './components/Feed';
@@ -8,11 +8,7 @@ import { LanguageProvider } from './context/LanguageContext';
 import { CallProvider } from './context/CallContext';
 import CallUI from './components/call/CallUI';
 
-declare global {
-  interface Window {
-    OneSignalDeferred: any[];
-  }
-}
+const VAPID_KEY = "lSw8bku7Z9y7-520kNooBcOJl2OGYWRnjnYcj23kZaI";
 
 const AppContent: React.FC = () => {
   const [user, setUser] = useState<any | null>(null);
@@ -20,41 +16,39 @@ const AppContent: React.FC = () => {
   const [authPage, setAuthPage] = useState<'login' | 'signup'>('login');
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !messaging) return;
 
-    // Sincronização de Identidade OneSignal <-> Firebase
-    const syncOneSignalIdentity = () => {
-      window.OneSignalDeferred = window.OneSignalDeferred || [];
-      window.OneSignalDeferred.push(async (OneSignal: any) => {
-        try {
-          console.log("Néos Push: Vinculando usuário ao OneSignal...", user.uid);
-          
-          // Vincula este dispositivo ao UID do Firebase (External ID)
-          await OneSignal.login(user.uid);
-          
-          // Garante que o usuário está inscrito se deu permissão
-          if (Notification.permission === 'granted') {
-            await OneSignal.User.PushSubscription.optIn();
-          }
-
-          // Salva o ID de subscrição no Firestore para monitoramento técnico
-          const subscriptionId = OneSignal.User.PushSubscription.id;
-          if (subscriptionId) {
+    const setupNotifications = async () => {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+          if (token) {
+            console.log("Néos FCM: Token gerado com sucesso.");
             await updateDoc(doc(db, 'users', user.uid), {
-              oneSignalSubscriptionId: subscriptionId,
-              pushEnabled: true,
-              lastPushSync: serverTimestamp()
+              fcmToken: token,
+              notificationsEnabled: true,
+              lastTokenSync: serverTimestamp()
             });
           }
-        } catch (err) {
-          console.error("Néos Push Sync Error:", err);
         }
-      });
+      } catch (err) {
+        console.error("Néos FCM Error:", err);
+      }
     };
 
-    // Executa a sincronização após o login
-    const timer = setTimeout(syncOneSignalIdentity, 2000);
-    return () => clearTimeout(timer);
+    // Registrar o Service Worker do Firebase se ainda não estiver
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/firebase-messaging-sw.js')
+        .then((registration) => {
+          console.log('Néos SW: Service Worker registrado com sucesso:', registration.scope);
+        })
+        .catch((err) => {
+          console.error('Néos SW: Erro ao registrar Service Worker:', err);
+        });
+    }
+
+    setupNotifications();
   }, [user]);
 
   useEffect(() => {
