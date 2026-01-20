@@ -23,11 +23,11 @@ interface EffectConfig {
     label: string;
     exposure: number;
     contrast: number;
-    highlights: number; // Simulado via curves ou brightness/contrast
-    shadows: number;    // Simulado via curves ou brightness/contrast
+    highlights: number;
+    shadows: number;
     saturation: number;
     temp: number;
-    clarity: number;    // Simulado via contrast + sharpness
+    clarity: number;
     sharpness: number;
     grain: number;
     vignette: number;
@@ -66,17 +66,23 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const getZoomFactor = (mm: LensMM) => ({ 24: 1.0, 35: 1.3, 50: 1.8, 85: 2.6, 101: 3.2 }[mm]);
 
     const applyQualityPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
+        // RESET FILTER TO APPLY NEW ONE
+        ctx.filter = 'none';
+        
         const hue = config.temp + (config.magenta || 0);
         
-        // Base Filters
-        ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${hue}deg) blur(${config.skinSoft ? config.skinSoft * 0.5 : 0}px)`;
+        // Build filter string
+        const filterStr = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${hue}deg) blur(${config.skinSoft ? config.skinSoft * 0.5 : 0}px)`;
         
+        // Temporary canvas to process the current frame with filters
         const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = w; tempCanvas.height = h;
+        tempCanvas.width = w;
+        tempCanvas.height = h;
         const tCtx = tempCanvas.getContext('2d');
         if(tCtx) {
+            tCtx.filter = filterStr;
             tCtx.drawImage(ctx.canvas, 0, 0);
-            ctx.filter = 'none';
+            ctx.clearRect(0, 0, w, h);
             ctx.drawImage(tempCanvas, 0, 0);
         }
 
@@ -107,16 +113,13 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             const now = new Date();
             const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
             
-            // Yellow Retro Date
             ctx.font = `bold ${Math.round(h * 0.035)}px monospace`;
             ctx.fillStyle = '#facc15';
             ctx.shadowColor = 'rgba(0,0,0,0.6)';
             ctx.shadowBlur = 6;
             ctx.fillText(dateStr, w * 0.08, h * 0.92);
             
-            // Néos Watermark
-            ctx.font = `black ${Math.round(h * 0.02)}px sans-serif`;
-            ctx.letterSpacing = "2px";
+            ctx.font = `900 ${Math.round(h * 0.02)}px sans-serif`;
             ctx.fillText("NÉOS PARADISE PRO", w * 0.08, h * 0.88);
             ctx.restore();
         }
