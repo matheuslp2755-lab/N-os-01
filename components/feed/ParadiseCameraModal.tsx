@@ -73,10 +73,10 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const getLensZoom = (mm: LensMM) => {
         switch(mm) {
             case 24: return 1.0;
-            case 35: return 1.5;
-            case 50: return 2.2;
-            case 85: return 3.5;
-            case 101: return 5.0;
+            case 35: return 1.4;
+            case 50: return 2.0;
+            case 85: return 3.2;
+            case 101: return 4.5;
             default: return 1.0;
         }
     };
@@ -95,19 +95,16 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const y = ((clientY - rect.top) / rect.height) * 100;
         setFocusPos({ x, y, active: true });
         
-        // Simular o foco automático da lente
         if (streamRef.current) {
             const track = streamRef.current.getVideoTracks()[0];
-            const capabilities = track.getCapabilities() as any;
-            if (capabilities.focusMode) {
-                // Tentar foco real se o hardware suportar
+            const caps = track.getCapabilities() as any;
+            if (caps.focusMode) {
                 track.applyConstraints({
                     advanced: [{ focusMode: 'manual', pointsOfInterest: [{x: clientX, y: clientY}] }] as any
                 }).catch(() => {});
             }
         }
-
-        setTimeout(() => setFocusPos(prev => ({ ...prev, active: false })), 1000);
+        setTimeout(() => setFocusPos(prev => ({ ...prev, active: false })), 1200);
     };
 
     const applyAIPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
@@ -120,15 +117,15 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.fillStyle = 'white';
             ctx.globalAlpha = config.grain / 255;
             for(let i=0; i < (isFinal ? 15000 : 1500); i++) {
-                ctx.fillRect(Math.random() * w, Math.random() * h, 1.2, 1.2);
+                ctx.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5);
             }
             ctx.globalAlpha = 1.0;
         }
 
         if (config.vignette > 0) {
-            const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w * 0.8);
+            const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w * 0.9);
             grad.addColorStop(0, 'transparent');
-            grad.addColorStop(1, `rgba(0,0,0,${config.vignette + 0.3})`);
+            grad.addColorStop(1, `rgba(0,0,0,${config.vignette + 0.4})`);
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, w, h);
         }
@@ -136,14 +133,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         if (isFinal) {
             const now = new Date();
             const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
-            ctx.font = `bold ${Math.round(h * 0.035)}px "Courier New", monospace`;
-            ctx.fillStyle = '#facc15';
-            ctx.shadowColor = 'black'; ctx.shadowBlur = 5;
-            ctx.fillText(dateStr, w * 0.08, h * 0.92);
+            ctx.font = `bold ${Math.round(h * 0.03)}px Courier, monospace`;
+            ctx.fillStyle = '#fbbf24';
+            ctx.shadowColor = 'black'; ctx.shadowBlur = 4;
+            ctx.fillText(dateStr, w * 0.08, h * 0.94);
             ctx.font = `900 ${Math.round(h * 0.015)}px sans-serif`;
-            ctx.fillStyle = 'rgba(255,255,255,0.6)';
-            ctx.textAlign = 'right'; ctx.letterSpacing = "4px";
-            ctx.fillText("PARADISE OPTICS PRO", w * 0.92, h * 0.92);
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.textAlign = 'right';
+            ctx.fillText("PARADISE OPTICS", w * 0.92, h * 0.94);
         }
         ctx.restore();
     };
@@ -155,14 +152,17 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             requestRef.current = requestAnimationFrame(renderLoop);
             return;
         }
+
         const ctx = canvas.getContext('2d', { alpha: false });
         if (ctx) {
             if (canvas.width !== video.videoWidth) canvas.width = video.videoWidth;
             if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
+            
             ctx.save();
             if (facingMode === 'user') { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             ctx.restore();
+
             applyAIPipeline(ctx, canvas.width, canvas.height, CAMERA_ENGINE_PACKS[activeVibe], false);
         }
         requestRef.current = requestAnimationFrame(renderLoop);
@@ -172,7 +172,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+                video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
                 audio: true
             });
             streamRef.current = stream;
@@ -201,22 +201,33 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
         const canvas = canvasRef.current;
         if (!canvas) return;
+
         setShowFlashAnim(true);
         setTimeout(() => setShowFlashAnim(false), 100);
 
+        // O SEGREDO DO RECORTE:
         const zoom = getLensZoom(lensMM);
-        const targetWidth = canvas.width / zoom;
-        const targetHeight = targetWidth * (4/3);
-        const sx = (canvas.width - targetWidth) / 2;
-        const sy = (canvas.height - targetHeight) / 2;
+        const vw = canvas.width;
+        const vh = canvas.height;
+        
+        // Calculamos a largura que o usuário "vê" dentro da moldura arredondada
+        // A moldura ocupa 85% da largura da tela, mas aqui usamos a escala inversa do zoom
+        const sourceWidth = vw / zoom;
+        const sourceHeight = sourceWidth * (4/3); // Proporção fixa 3:4 da moldura
+
+        const sx = (vw - sourceWidth) / 2;
+        const sy = (vh - sourceHeight) / 2;
 
         const outCanvas = document.createElement('canvas');
-        outCanvas.width = 1200; outCanvas.height = 1600;
+        outCanvas.width = 1080; 
+        outCanvas.height = 1440;
         const oCtx = outCanvas.getContext('2d');
+        
         if (oCtx) {
-            oCtx.drawImage(canvas, sx, sy, targetWidth, targetHeight, 0, 0, 1200, 1600);
-            applyAIPipeline(oCtx, 1200, 1600, CAMERA_ENGINE_PACKS[activeVibe], true);
-            setCapturedMedia(prev => [{url: outCanvas.toDataURL('image/jpeg', 0.95), type: 'photo'}, ...prev]);
+            // Desenhamos APENAS a região central (janela de zoom) no canvas final
+            oCtx.drawImage(canvas, sx, sy, sourceWidth, sourceHeight, 0, 0, 1080, 1440);
+            applyAIPipeline(oCtx, 1080, 1440, CAMERA_ENGINE_PACKS[activeVibe], true);
+            setCapturedMedia(prev => [{url: outCanvas.toDataURL('image/jpeg', 0.9), type: 'photo'}, ...prev]);
         }
     };
 
@@ -243,6 +254,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     };
 
     if (!isOpen) return null;
+
     const currentZoom = getLensZoom(lensMM);
 
     return (
@@ -261,46 +273,48 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 </button>
             </header>
 
-            <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden" onMouseDown={handleFocus}>
+            <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden" onMouseDown={handleFocus} onTouchStart={handleFocus}>
                 <video ref={videoRef} className="hidden" playsInline muted />
                 
+                {/* Visualização centralizada com o zoom da lente */}
                 <div className="w-full h-full flex items-center justify-center transition-transform duration-700 ease-in-out" style={{ transform: `scale(${currentZoom})` }}>
                     <canvas ref={canvasRef} className="w-full h-full object-cover" />
                 </div>
 
-                {/* Retícula de Foco Automático */}
+                {/* Retícula de Foco */}
                 {focusPos.active && (
                     <div 
-                        className="absolute w-16 h-16 border-2 border-sky-400 rounded-lg animate-focus-pulse pointer-events-none"
+                        className="absolute w-16 h-16 border-2 border-sky-400 rounded-lg animate-focus-pulse pointer-events-none z-40"
                         style={{ left: `${focusPos.x}%`, top: `${focusPos.y}%`, transform: 'translate(-50%, -50%)' }}
                     >
-                        <div className="absolute inset-0 border border-sky-400/30 scale-150 rounded-lg"></div>
+                        <div className="absolute inset-0 border border-sky-400/20 scale-150 rounded-lg"></div>
                     </div>
                 )}
 
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                {/* MOLDURA DE RECORTE REAL */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
                     <div 
-                        className="border-4 border-white/30 rounded-[3rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)] transition-all duration-500"
+                        className="border-4 border-white/40 rounded-[3rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)] transition-all duration-700"
                         style={{ width: `${85 / currentZoom}%`, aspectRatio: '3/4' }}
                     >
-                        {isRecording && (
+                         {isRecording && (
                             <div className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-red-600 px-4 py-1.5 rounded-full shadow-lg">
                                 <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
                                 <span className="text-[10px] font-black uppercase tracking-widest">{Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}</span>
                             </div>
-                        )}
-                        <div className="absolute bottom-6 left-6 opacity-40 flex flex-col gap-0.5">
+                         )}
+                         <div className="absolute bottom-6 left-6 opacity-40 flex flex-col gap-0.5">
                             <span className="text-[10px] font-black tracking-widest">{lensMM}MM AF ACTIVE</span>
-                            <span className="text-[8px] font-bold uppercase">Sensor Paradise Pro</span>
-                        </div>
+                            <span className="text-[8px] font-bold uppercase">RECORTE AUTOMÁTICO</span>
+                         </div>
                     </div>
                 </div>
             </div>
 
-            <footer className="bg-black px-4 pb-12 pt-4 border-t border-white/5 z-50">
+            <footer className="bg-black px-4 pb-12 pt-6 border-t border-white/5 z-50">
                 <div className="flex flex-col gap-6">
                     {/* Seletor de Modo */}
-                    <div className="flex justify-center gap-8 mb-2">
+                    <div className="flex justify-center gap-10 mb-2">
                         <button onClick={() => setCamMode('photo')} className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'photo' ? 'text-white' : 'text-zinc-600'}`}>Foto</button>
                         <button onClick={() => setCamMode('video')} className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'video' ? 'text-red-500' : 'text-zinc-600'}`}>Vídeo</button>
                     </div>
@@ -336,8 +350,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             {viewingGallery && (
                 <div className="fixed inset-0 z-[700] bg-black flex flex-col animate-fade-in">
                     <header className="p-6 flex justify-between items-center border-b border-white/10 bg-black/95">
-                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Voltar</button>
-                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Paradise Roll</h3>
+                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Sair</button>
+                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Galeria do Paraíso</h3>
                         <div className="w-10"></div>
                     </header>
                     <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5">
@@ -360,7 +374,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M15 19l-7-7 7-7" /></svg>
                         </button>
                     </div>
-                    <div className="w-full max-w-sm aspect-[3/4] rounded-[2.5rem] overflow-hidden shadow-2xl bg-zinc-900">
+                    <div className="w-full max-w-sm aspect-[3/4] rounded-[2.5rem] overflow-hidden shadow-2xl bg-zinc-900 border border-white/10">
                         {selectedItem.type === 'video' 
                         ? <video src={selectedItem.url} className="w-full h-full object-cover" controls autoPlay loop /> 
                         : <img src={selectedItem.url} className="w-full h-full object-cover" />}
@@ -374,9 +388,9 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
             <style>{`
                 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-                @keyframes focus-pulse { 0% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; } }
+                @keyframes focus-pulse { 0% { transform: translate(-50%, -50%) scale(1.3); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; } }
                 .animate-fade-in { animation: fade-in 0.3s ease-out; }
-                .animate-focus-pulse { animation: focus-pulse 0.3s ease-out forwards; }
+                .animate-focus-pulse { animation: focus-pulse 0.4s ease-out forwards; }
                 .no-scrollbar::-webkit-scrollbar { display: none; }
             `}</style>
         </div>
