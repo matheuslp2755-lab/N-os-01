@@ -70,14 +70,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const chunksRef = useRef<Blob[]>([]);
     const timerRef = useRef<number | null>(null);
 
-    // Multiplicador de zoom óptico real
+    // Zoom óptico real (simulado via recorte central)
     const getLensZoom = (mm: LensMM) => {
         switch(mm) {
             case 24: return 1.0;
-            case 35: return 1.5;
-            case 50: return 2.2;
-            case 85: return 3.5;
-            case 101: return 5.0;
+            case 35: return 1.4;
+            case 50: return 2.0;
+            case 85: return 3.2;
+            case 101: return 4.5;
             default: return 1.0;
         }
     };
@@ -117,8 +117,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.filter = 'none';
             ctx.fillStyle = 'white';
             ctx.globalAlpha = config.grain / 255;
-            for(let i=0; i < (isFinal ? 20000 : 1500); i++) {
-                ctx.fillRect(Math.random() * w, Math.random() * h, 1.4, 1.4);
+            for(let i=0; i < (isFinal ? 15000 : 1500); i++) {
+                ctx.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5);
             }
             ctx.globalAlpha = 1.0;
         }
@@ -134,14 +134,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         if (isFinal) {
             const now = new Date();
             const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
-            ctx.font = `bold ${Math.round(h * 0.035)}px "Courier New", monospace`;
-            ctx.fillStyle = '#facc15';
-            ctx.shadowColor = 'black'; ctx.shadowBlur = 5;
+            ctx.font = `bold ${Math.round(h * 0.035)}px Courier, monospace`;
+            ctx.fillStyle = '#fbbf24';
+            ctx.shadowColor = 'black'; ctx.shadowBlur = 4;
             ctx.fillText(dateStr, w * 0.08, h * 0.94);
             ctx.font = `900 ${Math.round(h * 0.015)}px sans-serif`;
-            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
             ctx.textAlign = 'right';
-            ctx.fillText("PARADISE OPTICS PRO", w * 0.92, h * 0.94);
+            ctx.fillText("PARADISE OPTICS", w * 0.92, h * 0.94);
         }
         ctx.restore();
     };
@@ -206,32 +206,32 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         setShowFlashAnim(true);
         setTimeout(() => setShowFlashAnim(false), 80);
 
-        // MOTOR DE RECORTE MATEMÁTICO ABSOLUTO
+        // MOTOR DE RECORTE MATEMÁTICO REAL:
+        // O preview usa um scale() para o usuário ver o zoom.
+        // A moldura branca ocupa 85% da largura da tela.
+        // Precisamos extrair apenas o que está dentro dessa moldura no sensor original.
+        
         const zoom = getLensZoom(lensMM);
         
-        // No sensor (canvas real), o que o usuário vê na moldura arredondada (que tem 85% de largura)
-        // é o centro reduzido pelo fator de zoom.
+        // A moldura branca sempre tem proporção 3:4.
+        // Calculamos o tamanho da 'janela' que o usuário vê no sensor original.
         const sourceWidth = canvas.width / zoom;
-        const sourceHeight = sourceWidth * (4/3); // Forçamos proporção 3:4 da moldura
+        const sourceHeight = sourceWidth * (4/3); // Proporção da moldura
 
-        // Coordenadas de origem exatas no sensor
+        // Coordenadas centrais no sensor original
         const sx = (canvas.width - sourceWidth) / 2;
         const sy = (canvas.height - sourceHeight) / 2;
 
-        // Criamos o arquivo final em alta resolução (1200x1600)
         const outCanvas = document.createElement('canvas');
-        outCanvas.width = 1200; 
-        outCanvas.height = 1600;
+        outCanvas.width = 1080; 
+        outCanvas.height = 1440; // Proporção 3:4
         const oCtx = outCanvas.getContext('2d');
         
         if (oCtx) {
-            // Recorte físico do sensor: pegamos apenas a área visível calculada
-            oCtx.drawImage(canvas, sx, sy, sourceWidth, sourceHeight, 0, 0, 1200, 1600);
-            
-            // Aplica os efeitos na imagem recortada final
-            applyAIPipeline(oCtx, 1200, 1600, CAMERA_ENGINE_PACKS[activeVibe], true);
-            
-            setCapturedMedia(prev => [{url: outCanvas.toDataURL('image/jpeg', 0.95), type: 'photo'}, ...prev]);
+            // Desenhamos apenas a fatia central do sensor original no canvas de saída
+            oCtx.drawImage(canvas, sx, sy, sourceWidth, sourceHeight, 0, 0, 1080, 1440);
+            applyAIPipeline(oCtx, 1080, 1440, CAMERA_ENGINE_PACKS[activeVibe], true);
+            setCapturedMedia(prev => [{url: outCanvas.toDataURL('image/jpeg', 0.9), type: 'photo'}, ...prev]);
         }
     };
 
@@ -280,36 +280,30 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden" onMouseDown={handleFocus} onTouchStart={handleFocus}>
                 <video ref={videoRef} className="hidden" playsInline muted />
                 
-                {/* Visualização de Zoom (CSS) */}
+                {/* Preview com Zoom Visual (o que o usuário vê) */}
                 <div className="w-full h-full flex items-center justify-center transition-transform duration-700 ease-in-out" style={{ transform: `scale(${currentZoom})` }}>
                     <canvas ref={canvasRef} className="w-full h-full object-cover" />
                 </div>
 
-                {/* Retícula de Foco Automático */}
+                {/* Retícula de Foco */}
                 {focusPos.active && (
                     <div 
-                        className="absolute w-20 h-20 border border-sky-400/50 rounded-2xl animate-focus-pulse pointer-events-none z-40"
+                        className="absolute w-16 h-16 border-2 border-sky-400 rounded-lg animate-focus-pulse pointer-events-none z-40"
                         style={{ left: `${focusPos.x}%`, top: `${focusPos.y}%`, transform: 'translate(-50%, -50%)' }}
                     >
-                        <div className="absolute inset-0 border-2 border-sky-400 scale-75 rounded-xl opacity-60"></div>
+                        <div className="absolute inset-0 border border-sky-400/20 scale-150 rounded-lg"></div>
                     </div>
                 )}
 
-                {/* MOLDURA DE RECORTE: O QUE ESTÁ DENTRO DISSO É O QUE SERÁ SALVO */}
+                {/* MOLDURA DE RECORTE (Área Útil) */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
                     <div 
-                        className="border-4 border-white/40 rounded-[3.5rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)] transition-all duration-700"
+                        className="border-4 border-white rounded-[3.5rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)] transition-all duration-700"
                         style={{ width: `${85 / currentZoom}%`, aspectRatio: '3/4' }}
                     >
-                         {isRecording && (
-                            <div className="absolute top-10 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-red-600 px-4 py-2 rounded-full shadow-lg">
-                                <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                                <span className="text-[10px] font-black uppercase tracking-widest">{Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}</span>
-                            </div>
-                         )}
-                         <div className="absolute bottom-8 left-8 opacity-40 flex flex-col gap-0.5">
-                            <span className="text-[11px] font-black tracking-widest">{lensMM}MM AF ACTIVE</span>
-                            <span className="text-[9px] font-bold uppercase tracking-tighter">PARADISE CROP ENGINE 2.0</span>
+                         <div className="absolute bottom-8 left-8 opacity-60 flex flex-col gap-0.5">
+                            <span className="text-[10px] font-black tracking-widest">{lensMM}MM SENSOR PRO</span>
+                            <span className="text-[8px] font-bold uppercase tracking-tighter text-sky-400">Fixed Frame Active</span>
                          </div>
                     </div>
                 </div>
@@ -317,17 +311,16 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
             <footer className="bg-black px-4 pb-14 pt-6 border-t border-white/5 z-50">
                 <div className="flex flex-col gap-6">
-                    {/* Seletor de Modo */}
-                    <div className="flex justify-center gap-12 mb-2">
-                        <button onClick={() => setCamMode('photo')} className={`text-[11px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'photo' ? 'text-white' : 'text-zinc-600'}`}>Foto</button>
-                        <button onClick={() => setCamMode('video')} className={`text-[11px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'video' ? 'text-red-500' : 'text-zinc-600'}`}>Vídeo</button>
+                    <div className="flex justify-center gap-10 mb-2">
+                        <button onClick={() => setCamMode('photo')} className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'photo' ? 'text-white' : 'text-zinc-600'}`}>Foto</button>
+                        <button onClick={() => setCamMode('video')} className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'video' ? 'text-red-500' : 'text-zinc-600'}`}>Vídeo</button>
                     </div>
 
-                    <div className="flex gap-5 overflow-x-auto no-scrollbar py-2 px-4 items-center justify-center">
+                    <div className="flex gap-4 overflow-x-auto no-scrollbar py-2 px-2 items-center justify-center">
                         {Object.values(CAMERA_ENGINE_PACKS).map(eff => (
                             <button key={eff.id} onClick={() => setActiveVibe(eff.id)} className={`flex flex-col items-center shrink-0 transition-all ${activeVibe === eff.id ? 'scale-110 opacity-100' : 'opacity-30'}`}>
-                                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-xl border ${activeVibe === eff.id ? 'bg-white text-black border-white shadow-[0_0_25px_rgba(255,255,255,0.2)]' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>{eff.label}</div>
-                                <span className="text-[9px] font-black uppercase mt-2 tracking-widest">{eff.name.split(' ')[0]}</span>
+                                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-xl border ${activeVibe === eff.id ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>{eff.label}</div>
+                                <span className="text-[8px] font-black uppercase mt-2 tracking-widest">{eff.name.split(' ')[0]}</span>
                             </button>
                         ))}
                     </div>
@@ -354,8 +347,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             {viewingGallery && (
                 <div className="fixed inset-0 z-[700] bg-black flex flex-col animate-fade-in">
                     <header className="p-6 flex justify-between items-center border-b border-white/10 bg-black/95">
-                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[11px] tracking-widest">Sair</button>
-                        <h3 className="font-black uppercase tracking-[0.4em] text-xs text-zinc-300">Paradise Film Roll</h3>
+                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Sair</button>
+                        <h3 className="font-black uppercase tracking-[0.3em] text-xs text-zinc-300">Film Roll</h3>
                         <div className="w-10"></div>
                     </header>
                     <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5">
@@ -364,7 +357,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                                 {item.type === 'video' 
                                 ? <video src={item.url} className="w-full h-full object-cover" /> 
                                 : <img src={item.url} className="w-full h-full object-cover" />}
-                                {item.type === 'video' && <div className="absolute top-2 right-2"><svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" /><path d="M14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" /></svg></div>}
                             </div>
                         ))}
                     </div>
