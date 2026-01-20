@@ -71,7 +71,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const hue = config.temp + (config.magenta || 0);
         const sat = config.saturation * (config.vibrance || 1.0);
         
-        // Pipeline principal: Brilho, Contraste, Saturação e Hue
         const filterStr = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${sat}) hue-rotate(${hue}deg)`;
         
         const tempCanvas = document.createElement('canvas');
@@ -84,7 +83,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.drawImage(tempCanvas, 0, 0);
         }
 
-        // Suavização de pele (Skin Soft)
         if (config.skinSoft && config.skinSoft > 0) {
             ctx.save();
             ctx.globalAlpha = config.skinSoft * 0.25;
@@ -93,7 +91,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.restore();
         }
 
-        // Bloom / Glow
         if (config.glow && config.glow > 0) {
             ctx.save();
             ctx.globalAlpha = config.glow * 0.4;
@@ -103,7 +100,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.restore();
         }
 
-        // Granulação (Grain)
         if (config.grain > 0) {
             ctx.save();
             ctx.globalAlpha = config.grain / 100;
@@ -115,14 +111,13 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.restore();
         }
 
-        // Marca d'água e Data na Captura Final
         if (isFinal) {
             ctx.save();
             const now = new Date();
             const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
             
             ctx.font = `bold ${Math.round(h * 0.035)}px monospace`;
-            ctx.fillStyle = '#facc15'; // Amarelo Retrô
+            ctx.fillStyle = '#facc15';
             ctx.shadowColor = 'rgba(0,0,0,0.7)';
             ctx.shadowBlur = 8;
             ctx.fillText(dateStr, w * 0.08, h * 0.92);
@@ -133,7 +128,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.restore();
         }
 
-        // Vinheta
         if (config.vignette > 0) {
             const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w);
             grad.addColorStop(0, 'transparent');

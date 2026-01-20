@@ -46,14 +46,11 @@ const Feed: React.FC = () => {
   const currentUser = auth.currentUser;
 
   useEffect(() => {
-    // Pedir permissão de notificação nativa ao entrar
     if ("Notification" in window) {
       if (Notification.permission === "default") {
         Notification.requestPermission();
       }
     }
-
-    // OneSignal initialization check
     window.OneSignalDeferred = window.OneSignalDeferred || [];
   }, []);
 
