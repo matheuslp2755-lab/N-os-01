@@ -7,7 +7,7 @@ interface ParadiseCameraModalProps {
     onClose: () => void;
 }
 
-type VibeEffect = 'analog' | 'cinematic' | 'pastel' | 'vhs';
+type VibeEffect = 'ultra_analog' | 'cinematic_pro' | 'soft_pastel' | 'vhs_lofi';
 type LensMM = 24 | 35 | 50 | 85 | 101;
 
 interface EffectConfig {
@@ -18,11 +18,7 @@ interface EffectConfig {
     contrast: number;
     highlights: number;
     shadows: number;
-    whites: number;
-    blacks: number;
-    clarity: number;
     sharpness: number; // 0 a 100
-    noiseReduction: number;
     grain: number;
     saturation: number;
     temp: number;
@@ -31,33 +27,33 @@ interface EffectConfig {
     splitToneHighlights?: { hue: number; sat: number };
 }
 
-const PROFESSIONAL_PACK: Record<VibeEffect, EffectConfig> = {
-    analog: { 
-        id: 'analog', name: 'Analógico Ultra', label: '🎞️', 
-        exposure: 1.05, contrast: 1.25, highlights: -0.15, shadows: 0.10, whites: 0.08, blacks: -0.12, 
-        clarity: 1.15, sharpness: 45, noiseReduction: 10, grain: 8, saturation: 1.10, temp: 5, vignette: 0.05
+const CAMERA_ENGINE_PACKS: Record<VibeEffect, EffectConfig> = {
+    ultra_analog: { 
+        id: 'ultra_analog', name: 'Ultra Analógico', label: '🎞️', 
+        exposure: 1.05, contrast: 1.25, highlights: -0.10, shadows: 0.05, 
+        sharpness: 45, grain: 8, saturation: 1.10, temp: 5, vignette: 0.02
     },
-    cinematic: { 
-        id: 'cinematic', name: 'Cinema Realista', label: '🎬', 
-        exposure: 1.05, contrast: 1.30, highlights: -0.15, shadows: 0.20, whites: 0.10, blacks: -0.20, 
-        clarity: 1.20, sharpness: 35, noiseReduction: 8, grain: 12, saturation: 1.15, temp: -5, vignette: 0.15,
+    cinematic_pro: { 
+        id: 'cinematic_pro', name: 'Cinema Realista', label: '🎬', 
+        exposure: 1.00, contrast: 1.30, highlights: -0.15, shadows: 0.20, 
+        sharpness: 35, grain: 12, saturation: 1.15, temp: -5, vignette: 0.08,
         splitToneHighlights: { hue: 45, sat: 0.15 }, splitToneShadows: { hue: 210, sat: 0.10 } 
     },
-    pastel: { 
-        id: 'pastel', name: 'Pastel Suave', label: '📷', 
-        exposure: 1.20, contrast: 0.95, highlights: -0.15, shadows: 0.25, whites: 0.10, blacks: -0.05, 
-        clarity: 0.90, sharpness: 20, noiseReduction: 18, grain: 20, saturation: 1.08, temp: 15, vignette: 0.02
+    soft_pastel: { 
+        id: 'soft_pastel', name: 'Pastel Suave', label: '📷', 
+        exposure: 1.20, contrast: 0.95, highlights: -0.05, shadows: 0.15, 
+        sharpness: 20, grain: 15, saturation: 1.05, temp: 10, vignette: 0.01
     },
-    vhs: { 
-        id: 'vhs', name: 'VHS Nostalgia', label: '📼', 
-        exposure: 1.05, contrast: 0.90, highlights: -0.30, shadows: 0.30, whites: 0.05, blacks: -0.15, 
-        clarity: 0.80, sharpness: 10, noiseReduction: 20, grain: 45, saturation: 0.90, temp: -10, vignette: 0.20
+    vhs_lofi: { 
+        id: 'vhs_lofi', name: 'VHS Nostalgia', label: '📼', 
+        exposure: 1.10, contrast: 0.90, highlights: -0.20, shadows: 0.25, 
+        sharpness: 10, grain: 40, saturation: 0.85, temp: -10, vignette: 0.15
     }
 };
 
 const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClose }) => {
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-    const [activeVibe, setActiveVibe] = useState<VibeEffect>('analog');
+    const [activeVibe, setActiveVibe] = useState<VibeEffect>('ultra_analog');
     const [lensMM, setLensMM] = useState<LensMM>(35);
     const [capturedImages, setCapturedImages] = useState<string[]>([]);
     const [viewingGallery, setViewingGallery] = useState(false);
@@ -79,10 +75,10 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         }
     };
 
-    const applySuperResPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
+    const applyAIPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
         ctx.save();
         
-        // 1. Adaptive Sharpness (Super-Res)
+        // 1. Super-Resolution Sharpening (Unsharp Mask simulated)
         if (isFinal && config.sharpness > 0) {
             const mix = config.sharpness / 100;
             ctx.globalAlpha = mix;
@@ -91,58 +87,72 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.globalAlpha = 1.0;
         }
 
-        // 2. Color & Exposure
+        // 2. Base Color Engine
         ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${config.temp}deg)`;
         ctx.drawImage(ctx.canvas, 0, 0);
 
-        // 3. Dynamic Range Simulation
-        if (config.highlights < 0) {
-            ctx.globalCompositeOperation = 'multiply';
-            ctx.globalAlpha = Math.abs(config.highlights) * 0.5;
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, w, h);
+        // 3. S-Curve Contrast Simulation
+        if (isFinal && config.id === 'ultra_analog') {
+            ctx.globalCompositeOperation = 'soft-light';
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            ctx.fillRect(0,0,w,h);
+            ctx.globalCompositeOperation = 'source-over';
         }
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = 1.0;
 
-        // 4. Split Toning
+        // 4. Split Toning (Sombras e Realces)
         if (config.splitToneHighlights) {
             ctx.globalCompositeOperation = 'overlay';
             ctx.globalAlpha = config.splitToneHighlights.sat;
             ctx.fillStyle = `hsl(${config.splitToneHighlights.hue}, 100%, 50%)`;
             ctx.fillRect(0, 0, w, h);
         }
+        if (config.splitToneShadows) {
+            ctx.globalCompositeOperation = 'soft-light';
+            ctx.globalAlpha = config.splitToneShadows.sat;
+            ctx.fillStyle = `hsl(${config.splitToneShadows.hue}, 100%, 20%)`;
+            ctx.fillRect(0, 0, w, h);
+        }
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1.0;
 
-        // 5. Film Grain
+        // 5. Organical Film Grain
         if (config.grain > 0) {
             ctx.filter = 'none';
             ctx.fillStyle = '#ffffff';
             ctx.globalAlpha = config.grain / 255;
-            for(let i=0; i < (isFinal ? 3000 : 500); i++){
+            for(let i=0; i < (isFinal ? 4000 : 600); i++){
                 ctx.fillRect(Math.random()*w, Math.random()*h, 1.2, 1.2);
             }
             ctx.globalAlpha = 1.0;
         }
 
-        // 6. Watermarks (Final Only)
+        // 6. Optical Vignette
+        if (config.vignette > 0) {
+            ctx.filter = 'none';
+            const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w * 0.85);
+            grad.addColorStop(0, 'transparent');
+            grad.addColorStop(1, `rgba(0,0,0,${config.vignette + 0.1})`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, w, h);
+        }
+
+        // 7. Néos Pro Metadata Stamp
         if (isFinal) {
             ctx.filter = 'none';
             const now = new Date();
             const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
             
             ctx.font = `bold ${Math.round(h * 0.04)}px "Courier New", monospace`;
-            ctx.fillStyle = '#facc15'; 
+            ctx.fillStyle = '#facc15'; // Amarelo Retro
             ctx.shadowColor = 'rgba(0,0,0,0.8)';
             ctx.shadowBlur = 10;
-            ctx.fillText(dateStr, w * 0.08, h * 0.92);
+            ctx.fillText(dateStr, w * 0.08, h * 0.93);
 
-            ctx.font = `900 ${Math.round(h * 0.018)}px sans-serif`;
+            ctx.font = `900 ${Math.round(h * 0.015)}px sans-serif`;
             ctx.fillStyle = 'rgba(255,255,255,0.8)';
             ctx.textAlign = 'right';
-            ctx.letterSpacing = "8px";
-            ctx.fillText("NÉOS", w * 0.92, h * 0.92);
+            ctx.letterSpacing = "6px";
+            ctx.fillText("NÉOS PARADISE ENGINE", w * 0.92, h * 0.93);
         }
 
         ctx.restore();
@@ -168,7 +178,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.drawImage(video, 0, 0, vw, vh);
             ctx.restore();
 
-            applySuperResPipeline(ctx, vw, vh, PROFESSIONAL_PACK[activeVibe], false);
+            applyAIPipeline(ctx, vw, vh, CAMERA_ENGINE_PACKS[activeVibe], false);
         }
         requestRef.current = requestAnimationFrame(renderLoop);
     }, [facingMode, activeVibe]);
@@ -208,19 +218,21 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         const vw = canvas.width;
         const vh = canvas.height;
         
+        // RECORTE ÓPTICO PRECISO: Captura apenas a região do quadrado da lente
         const cropW = vw / zoom;
         const cropH = vh / zoom;
         const sx = (vw - cropW) / 2;
         const sy = (vh - cropH) / 2;
 
         const outCanvas = document.createElement('canvas');
-        outCanvas.width = 1440;
+        outCanvas.width = 1440; // High Resolution Target
         outCanvas.height = 1920;
         const oCtx = outCanvas.getContext('2d');
         
         if(oCtx) {
+            // Desenha apenas o recorte no canvas final, reamostrando para alta resolução
             oCtx.drawImage(canvas, sx, sy, cropW, cropH, 0, 0, outCanvas.width, outCanvas.height);
-            applySuperResPipeline(oCtx, outCanvas.width, outCanvas.height, PROFESSIONAL_PACK[activeVibe], true);
+            applyAIPipeline(oCtx, outCanvas.width, outCanvas.height, CAMERA_ENGINE_PACKS[activeVibe], true);
         }
 
         setCapturedImages(prev => [outCanvas.toDataURL('image/jpeg', 1.0), ...prev]);
@@ -231,7 +243,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const zoom = getZoomFactor(lensMM);
 
     return (
-        <div className="fixed inset-0 bg-black flex flex-col overflow-hidden touch-none h-[100dvh] text-white z-[600]">
+        <div className="fixed inset-0 bg-black flex flex-col overflow-hidden touch-none h-[100dvh] text-white font-sans z-[600]">
             {showFlashAnim && <div className="fixed inset-0 z-[1000] bg-white animate-pulse"></div>}
 
             <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-50">
@@ -249,18 +261,20 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden">
                 <video ref={videoRef} className="hidden" playsInline muted />
                 
+                {/* Viewport com Zoom Óptico Simulado */}
                 <div className="w-full h-full flex items-center justify-center transition-transform duration-700 cubic-bezier(0.16, 1, 0.3, 1)" style={{ transform: `scale(${zoom})` }}>
                     <canvas ref={canvasRef} className="w-full h-full object-cover" />
                 </div>
 
+                {/* Guia de Recorte Profissional */}
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                     <div 
-                        className="border-2 border-white/30 rounded-[3rem] shadow-[0_0_0_2000px_rgba(0,0,0,0.6)] transition-all duration-700"
+                        className="border-2 border-white/30 rounded-[3.5rem] shadow-[0_0_0_2000px_rgba(0,0,0,0.6)] transition-all duration-700 ease-out"
                         style={{ width: `${100/zoom}%`, aspectRatio: '3/4' }}
                     >
                          <div className="absolute bottom-6 left-6 opacity-40 flex flex-col gap-0.5">
                             <span className="text-[10px] font-black tracking-[0.3em]">{lensMM}MM PRO OPTICS</span>
-                            <span className="text-[8px] font-bold">RAW SENSOR ACTIVE</span>
+                            <span className="text-[8px] font-bold uppercase tracking-widest">Néos Engine v4</span>
                          </div>
                     </div>
                 </div>
@@ -269,7 +283,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             <footer className="bg-black px-4 pb-12 pt-6 border-t border-white/5 z-50">
                 <div className="flex flex-col gap-8">
                     <div className="flex gap-4 overflow-x-auto no-scrollbar py-2 px-2 items-center justify-center">
-                        {Object.values(PROFESSIONAL_PACK).map(eff => (
+                        {Object.values(CAMERA_ENGINE_PACKS).map(eff => (
                             <button key={eff.id} onClick={() => setActiveVibe(eff.id)} className={`flex flex-col items-center shrink-0 transition-all ${activeVibe === eff.id ? 'scale-110 opacity-100' : 'opacity-30'}`}>
                                 <div className={`w-14 h-14 rounded-full flex items-center justify-center text-xl border ${activeVibe === eff.id ? 'bg-white text-black border-white shadow-[0_0_25px_rgba(255,255,255,0.3)]' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>{eff.label}</div>
                                 <span className="text-[8px] font-black uppercase mt-2 tracking-widest text-center whitespace-nowrap">{eff.name.split(' ')[0]}</span>
@@ -292,7 +306,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 <div className="fixed inset-0 z-[700] bg-black flex flex-col animate-fade-in">
                     <header className="p-6 flex justify-between items-center border-b border-white/10 bg-black/90 backdrop-blur-md">
                         <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Fechar</button>
-                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Galeria Néos</h3>
+                        <h3 className="font-black uppercase tracking-[0.3em] text-xs">Galeria Néos Pro</h3>
                         <div className="w-10"></div>
                     </header>
                     <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5 no-scrollbar">
@@ -300,7 +314,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                             <div key={i} className="aspect-[3/4] relative cursor-pointer active:opacity-50" onClick={() => {
                                 const link = document.createElement('a');
                                 link.href = img;
-                                link.download = `Neos_Pro_${Date.now()}.jpg`;
+                                link.download = `Neos_Engine_v4_${Date.now()}.jpg`;
                                 link.click();
                             }}><img src={img} className="w-full h-full object-cover" alt={`img-${i}`} /></div>
                         ))}
