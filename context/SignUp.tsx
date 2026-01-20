@@ -17,14 +17,22 @@ const SignUp: React.FC<{ onSwitchMode: () => void }> = ({ onSwitchMode }) => {
   const isFormValid = email.includes('@') && username.trim() !== '' && password.trim().length >= 6 && age !== '';
 
   const checkUsernameAvailable = async (name: string) => {
-    const q = query(collection(db, 'users'), where('username_lowercase', '==', name.toLowerCase()), limit(1));
-    const snap = await getDocs(q);
-    return snap.empty;
+    try {
+      const q = query(collection(db, 'users'), where('username_lowercase', '==', name.toLowerCase()), limit(1));
+      const snap = await getDocs(q);
+      return snap.empty;
+    } catch (e) {
+      console.error("Erro ao verificar username:", e);
+      return true; // Prossegue em caso de erro na consulta inicial
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!isFormValid) return;
+    if (!isFormValid) {
+        setError("Preencha todos os campos corretamente.");
+        return;
+    }
     
     const ageNum = parseInt(age);
     if (isNaN(ageNum) || ageNum < 12) {
@@ -34,50 +42,71 @@ const SignUp: React.FC<{ onSwitchMode: () => void }> = ({ onSwitchMode }) => {
 
     setLoading(true);
     setError('');
+
     try {
+      // 1. Verifica se o usuário já existe
       const available = await checkUsernameAvailable(username);
       if (!available) {
-        setError("Usuário já existe.");
+        setError("Este nome de usuário já está em uso.");
         setLoading(false);
         return;
       }
 
+      // 2. Cria o usuário no Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Gerar Avatar padrão
+      // 3. Gera e faz upload do Avatar padrão (SVG simples para garantir velocidade)
       const initial = username.charAt(0).toUpperCase();
       const colors = ['#6366f1', '#a855f7', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6'];
       const color = colors[initial.charCodeAt(0) % colors.length];
       const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 150 150"><rect width="100%" height="100%" fill="${color}" /><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="80" fill="#ffffff">${initial}</text></svg>`;
       const svgBlob = new Blob([svgString], { type: 'image/svg+xml' });
+      
       const avatarRef = storageRef(storage, `avatars/${user.uid}/avatar.svg`);
       await uploadBytes(avatarRef, svgBlob);
       const avatarUrl = await getDownloadURL(avatarRef);
 
-      await updateProfile(user, { displayName: username, photoURL: avatarUrl });
+      // 4. Atualiza o perfil no Auth
+      await updateProfile(user, { 
+        displayName: username, 
+        photoURL: avatarUrl 
+      });
       
-      // Criar documento no Firestore
-      await setDoc(doc(db, 'users', user.uid), {
+      // 5. Salva os dados no Firestore (Etapa Crucial)
+      const userData = {
         uid: user.uid,
-        username, 
-        username_lowercase: username.toLowerCase(), 
-        email, 
+        username: username,
+        username_lowercase: username.toLowerCase(),
+        email: email,
         avatar: avatarUrl,
-        age: ageNum, 
-        bio: '', 
-        isPrivate: false, 
-        createdAt: serverTimestamp(), 
+        age: ageNum,
+        bio: '',
+        isPrivate: false,
+        createdAt: serverTimestamp(),
         lastSeen: serverTimestamp(),
         isAnonymous: false,
         appearOnRadar: true,
-        isVerified: false
-      });
+        isVerified: false,
+        isBanned: false
+      };
 
-      // O login automático do Firebase cuidará do redirecionamento
+      await setDoc(doc(db, 'users', user.uid), userData);
+
+      console.log("Néos: Conta criada e dados salvos com sucesso!");
+      // O observer do Firebase Auth no App.tsx detectará a mudança de estado e redirecionará.
+      
     } catch (err: any) {
-      console.error("SignUp Error:", err);
-      setError(err.code === 'auth/email-already-in-use' ? "E-mail já cadastrado." : "Erro ao criar conta.");
+      console.error("SignUp Error Detalhado:", err);
+      if (err.code === 'auth/email-already-in-use') {
+        setError("E-mail já cadastrado.");
+      } else if (err.code === 'auth/weak-password') {
+        setError("Senha muito fraca.");
+      } else if (err.code === 'permission-denied') {
+        setError("Erro de permissão no banco de dados.");
+      } else {
+        setError("Falha ao criar conta: " + err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -92,15 +121,55 @@ const SignUp: React.FC<{ onSwitchMode: () => void }> = ({ onSwitchMode }) => {
             </h2>
             
             <form onSubmit={handleSubmit} className="flex flex-col gap-4 relative z-10">
-                <TextInput id="email" type="email" label="E-mail" value={email} onChange={e => setEmail(e.target.value)} className="!rounded-2xl" />
-                <TextInput id="username" type="text" label="Usuário" value={username} onChange={e => setUsername(e.target.value)} className="!rounded-2xl" />
-                <TextInput id="password" type="password" label="Senha (6+ dígitos)" value={password} onChange={e => setPassword(e.target.value)} className="!rounded-2xl" />
-                <TextInput id="age" type="number" label="Idade" value={age} onChange={e => setAge(e.target.value)} className="!rounded-2xl" />
+                <TextInput 
+                  id="email" 
+                  type="email" 
+                  label="E-mail" 
+                  value={email} 
+                  onChange={e => setEmail(e.target.value)} 
+                  className="!rounded-2xl" 
+                  required 
+                />
+                <TextInput 
+                  id="username" 
+                  type="text" 
+                  label="Usuário" 
+                  value={username} 
+                  onChange={e => setUsername(e.target.value)} 
+                  className="!rounded-2xl" 
+                  required 
+                />
+                <TextInput 
+                  id="password" 
+                  type="password" 
+                  label="Senha (6+ dígitos)" 
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)} 
+                  className="!rounded-2xl" 
+                  required 
+                />
+                <TextInput 
+                  id="age" 
+                  type="number" 
+                  label="Idade" 
+                  value={age} 
+                  onChange={e => setAge(e.target.value)} 
+                  className="!rounded-2xl" 
+                  required 
+                />
                 
-                {error && <p className="text-red-500 text-[10px] font-black text-center uppercase tracking-widest">{error}</p>}
+                {error && (
+                  <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-xl">
+                    <p className="text-red-500 text-[10px] font-black text-center uppercase tracking-widest">{error}</p>
+                  </div>
+                )}
                 
-                <Button type="submit" disabled={!isFormValid || loading} className="mt-4 !py-4 !rounded-2xl !font-black !uppercase !bg-gradient-to-r !from-indigo-600 !to-purple-600 shadow-xl shadow-indigo-500/20 active:scale-95 transition-all">
-                    {loading ? "Criando..." : "Criar Conta"}
+                <Button 
+                  type="submit" 
+                  disabled={!isFormValid || loading} 
+                  className="mt-4 !py-4 !rounded-2xl !font-black !uppercase !bg-gradient-to-r !from-indigo-600 !to-purple-600 shadow-xl shadow-indigo-500/20 active:scale-95 transition-all"
+                >
+                    {loading ? "Processando..." : "Finalizar Cadastro"}
                 </Button>
             </form>
         </div>
