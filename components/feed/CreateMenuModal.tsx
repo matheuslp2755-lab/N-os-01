@@ -1,10 +1,11 @@
+
 import React from 'react';
 import { useLanguage } from '../../context/LanguageContext';
 
 interface CreateMenuModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSelect: (type: 'post' | 'pulse' | 'vibe' | 'paradise') => void;
+    onSelect: (type: 'post' | 'pulse' | 'vibe' | 'paradise' | 'beam') => void;
 }
 
 const CreateMenuModal: React.FC<CreateMenuModalProps> = ({ isOpen, onClose, onSelect }) => {
@@ -52,6 +53,16 @@ const CreateMenuModal: React.FC<CreateMenuModalProps> = ({ isOpen, onClose, onSe
                 </svg>
             ),
             color: 'bg-indigo-600'
+        },
+        { 
+            id: 'beam', 
+            label: 'Néos Beam', 
+            icon: (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <path d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+            ),
+            color: 'bg-sky-400'
         }
     ];
 

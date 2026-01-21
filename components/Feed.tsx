@@ -16,6 +16,7 @@ import VibeBrowser from './browser/VibeBrowser';
 import CreateMenuModal from './feed/CreateMenuModal';
 import WeatherBanner from './feed/WeatherBanner';
 import ParadiseCameraModal from './feed/ParadiseCameraModal';
+import VibeBeamModal from './feed/VibeBeamModal';
 import { auth, db, collection, query, onSnapshot, orderBy, getDocs, where, doc, getDoc, limit, deleteDoc, updateDoc, serverTimestamp } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -36,6 +37,7 @@ const Feed: React.FC = () => {
   const [isCreatePulseOpen, setIsCreatePulseOpen] = useState(false);
   const [isCreateVibeOpen, setIsCreateVibeOpen] = useState(false);
   const [isParadiseOpen, setIsParadiseOpen] = useState(false);
+  const [isBeamOpen, setIsBeamOpen] = useState(false);
   const [isMessagesOpen, setIsMessagesOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isBrowserOpen, setIsBrowserOpen] = useState(false);
@@ -65,8 +67,6 @@ const Feed: React.FC = () => {
             const alertId = snap.docs[0].id;
             setSystemAlert({ id: alertId, title: alertData.title, body: alertData.body });
             setAlertProgress(100);
-            
-            // Marcar como lida imediatamente para não repetir ao recarregar
             updateDoc(doc(db, 'notifications_in_app', alertId), { read: true });
         }
     });
@@ -76,10 +76,9 @@ const Feed: React.FC = () => {
   // Timer do Alerta (20 segundos)
   useEffect(() => {
     if (systemAlert) {
-        const duration = 20000; // 20s
-        const interval = 100; // atualizar a cada 0.1s
+        const duration = 20000;
+        const interval = 100;
         const step = (interval / duration) * 100;
-
         const timer = setInterval(() => {
             setAlertProgress(prev => {
                 if (prev <= 0) {
@@ -90,7 +89,6 @@ const Feed: React.FC = () => {
                 return prev - step;
             });
         }, interval);
-
         return () => clearInterval(timer);
     }
   }, [systemAlert]);
@@ -139,12 +137,13 @@ const Feed: React.FC = () => {
     setViewMode('profile');
   };
 
-  const handleMenuSelect = (type: 'post' | 'pulse' | 'vibe' | 'paradise') => {
+  const handleMenuSelect = (type: 'post' | 'pulse' | 'vibe' | 'paradise' | 'beam') => {
     switch (type) {
         case 'post': setIsGalleryOpen(true); break;
         case 'pulse': setIsCreatePulseOpen(true); break;
         case 'vibe': setIsCreateVibeOpen(true); break;
         case 'paradise': setIsParadiseOpen(true); break;
+        case 'beam': setIsBeamOpen(true); break;
     }
   };
 
@@ -166,7 +165,6 @@ const Feed: React.FC = () => {
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
             </div>
-            {/* Barra de Progresso (20s) */}
             <div className="absolute bottom-0 left-0 h-1.5 bg-white/30 transition-all duration-100 ease-linear" style={{ width: `${alertProgress}%` }}></div>
           </div>
         </div>
@@ -182,7 +180,7 @@ const Feed: React.FC = () => {
                 <span>{t('header.home')}</span>
             </button>
             <button onClick={() => setIsParadiseOpen(true)} className="flex items-center gap-4 p-3 rounded-2xl text-sky-500 font-bold hover:bg-sky-50 dark:hover:bg-sky-950/20 transition-all">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /></svg>
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812-1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /></svg>
                 <span>Câmera do Paraíso</span>
             </button>
         </nav>
@@ -238,18 +236,19 @@ const Feed: React.FC = () => {
           />
       )}
       
-      <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={() => {}} />
+      <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={(imgs) => { setSelectedMedia(imgs); setIsGalleryOpen(false); setIsCreatePostOpen(true); }} />
       <CreatePostModal 
         isOpen={isCreatePostOpen} 
         onClose={() => setIsCreatePostOpen(false)} 
         onPostCreated={() => setIsCreatePostOpen(false)} 
-        initialImages={[]} 
+        initialImages={selectedMedia} 
       />
       
       <CreatePulseModal isOpen={isCreatePulseOpen} onClose={() => setIsCreatePulseOpen(false)} onPulseCreated={() => setIsCreatePulseOpen(false)} />
       <CreateVibeModal isOpen={isCreateVibeOpen} onClose={() => setIsCreateVibeOpen(false)} onVibeCreated={() => setIsCreateVibeOpen(false)} />
       {isBrowserOpen && <VibeBrowser onClose={() => setIsBrowserOpen(false)} />}
       <ParadiseCameraModal isOpen={isParadiseOpen} onClose={() => setIsParadiseOpen(false)} />
+      <VibeBeamModal isOpen={isBeamOpen} onClose={() => setIsBeamOpen(false)} />
 
       <style>{`
         @keyframes slide-down { from { transform: translate(-50%, -100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
