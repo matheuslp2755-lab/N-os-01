@@ -24,8 +24,9 @@ const PRESETS: Preset[] = [
         id: 'dazz', 
         name: 'DAZZ DANSCAN', 
         description: 'Flash Vintage / GRF Look', 
-        filterCSS: 'brightness(0.92) contrast(0.88) saturate(0.9) sepia(0.08) blur(0.05px)', 
-        grain: 0.22, 
+        // Ajuste conforme especificação: Exposure -0.05, Brightness +0.04, Contrast -0.10, Saturation -0.08, Sepia para temperatura/tint
+        filterCSS: 'brightness(0.99) contrast(0.90) saturate(0.92) sepia(0.06) blur(0.05px)', 
+        grain: 0.16, 
         dateColor: 'transparent',
         isDazz: true 
     },
@@ -132,7 +133,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     };
 
     const applyPostProcessing = (ctx: CanvasRenderingContext2D, width: number, height: number, preset: Preset) => {
-        // 1. Grão Dinâmico Profissional
+        // 1. Grão Dinâmico Profissional - Opacidade 85% conforme solicitação
         const grainCanvas = document.createElement('canvas');
         grainCanvas.width = 256; grainCanvas.height = 256;
         const gCtx = grainCanvas.getContext('2d');
@@ -144,19 +145,27 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             }
             gCtx.putImageData(gData, 0, 0);
             ctx.save();
-            ctx.globalAlpha = preset.grain;
+            ctx.globalAlpha = preset.grain * 0.85; // Grão 0.16 + Opacidade 85%
             ctx.globalCompositeOperation = 'overlay';
             ctx.fillStyle = ctx.createPattern(grainCanvas, 'repeat')!;
             ctx.fillRect(0, 0, width, height);
             ctx.restore();
         }
 
-        // 2. DAZZ DanScan - Simulação de Flash Real Central
+        // 2. DAZZ DanScan - Simulação de Flash Real Central + Vinheta Ajustada
         if (preset.isDazz) {
-            const dazzFlash = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, Math.max(width, height) * 0.7);
-            dazzFlash.addColorStop(0, 'rgba(255, 255, 255, 0.35)'); // Brilho central
-            dazzFlash.addColorStop(0.3, 'rgba(255, 255, 255, 0.05)');
-            dazzFlash.addColorStop(1, 'rgba(0, 0, 0, 0.25)'); // Vinheta DAZZ
+            // Levantando sombras (Shadows +0.35) via preenchimento suave
+            ctx.save();
+            ctx.globalCompositeOperation = 'soft-light';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.fillRect(0, 0, width, height);
+            ctx.restore();
+
+            // Vinheta especificada: 0.10 (suave)
+            const dazzFlash = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, Math.max(width, height) * 0.9);
+            dazzFlash.addColorStop(0, 'rgba(255, 255, 255, 0.2)'); // Brilho central suave
+            dazzFlash.addColorStop(0.5, 'rgba(0, 0, 0, 0)');
+            dazzFlash.addColorStop(1, 'rgba(0, 0, 0, 0.1)'); // Vinheta 0.10
             ctx.fillStyle = dazzFlash;
             ctx.fillRect(0, 0, width, height);
         }
