@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Header from './common/Header';
 import BottomNav from './common/BottomNav';
@@ -27,7 +28,8 @@ const Feed: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   
-  const [inAppAlert, setInAppAlert] = useState<{show: boolean, title: string, body: string, type: 'message' | 'system'} | null>(null);
+  const [systemAlert, setSystemAlert] = useState<{id: string, title: string, body: string} | null>(null);
+  const [alertProgress, setAlertProgress] = useState(100);
   
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
@@ -46,13 +48,52 @@ const Feed: React.FC = () => {
 
   const currentUser = auth.currentUser;
 
+  // Escutar Alertas de Sistema em Tempo Real
   useEffect(() => {
-    if ("Notification" in window) {
-      if (Notification.permission === "default") {
-        Notification.requestPermission();
-      }
+    if (!currentUser) return;
+    const q = query(
+        collection(db, 'notifications_in_app'), 
+        where('recipientId', '==', currentUser.uid),
+        where('read', '==', false),
+        where('type', '==', 'system'),
+        limit(1)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+        if (!snap.empty) {
+            const alertData = snap.docs[0].data();
+            const alertId = snap.docs[0].id;
+            setSystemAlert({ id: alertId, title: alertData.title, body: alertData.body });
+            setAlertProgress(100);
+            
+            // Marcar como lida imediatamente para não repetir ao recarregar
+            updateDoc(doc(db, 'notifications_in_app', alertId), { read: true });
+        }
+    });
+    return () => unsub();
+  }, [currentUser]);
+
+  // Timer do Alerta (20 segundos)
+  useEffect(() => {
+    if (systemAlert) {
+        const duration = 20000; // 20s
+        const interval = 100; // atualizar a cada 0.1s
+        const step = (interval / duration) * 100;
+
+        const timer = setInterval(() => {
+            setAlertProgress(prev => {
+                if (prev <= 0) {
+                    clearInterval(timer);
+                    setSystemAlert(null);
+                    return 0;
+                }
+                return prev - step;
+            });
+        }, interval);
+
+        return () => clearInterval(timer);
     }
-  }, []);
+  }, [systemAlert]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -107,41 +148,26 @@ const Feed: React.FC = () => {
     }
   };
 
-  const handleImagesConfirmed = (imgs: any[]) => {
-      setSelectedMedia([...imgs]);
-      setIsGalleryOpen(false);
-      setTimeout(() => setIsCreatePostOpen(true), 100);
-  };
-
-  const handleCloseCreatePost = () => {
-      setIsCreatePostOpen(false);
-      selectedMedia.forEach(m => {
-          if (m.preview && m.preview.startsWith('blob:')) URL.revokeObjectURL(m.preview);
-      });
-      setSelectedMedia([]);
-  };
-
-  const handlePulseDeleted = async (pulse: any) => {
-      if (!currentUser || currentUser.uid !== pulse.authorId) return;
-      if (window.confirm("Deseja apagar este Pulse?")) {
-          await deleteDoc(doc(db, 'pulses', pulse.id));
-          setViewingPulseGroup(null);
-      }
-  };
-
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      {inAppAlert && (
-        <div className="fixed top-2 left-1/2 -translate-x-1/2 z-[2000] w-[95%] max-w-md animate-slide-down">
-          <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-2xl border border-white/20 dark:border-zinc-800 p-4 rounded-[2rem] shadow-2xl flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-500 flex items-center justify-center text-white shrink-0">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" strokeWidth={2}/></svg>
+      {/* Alerta de Sistema (Feed) */}
+      {systemAlert && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1500] w-[95%] max-w-lg animate-slide-down">
+          <div className="bg-indigo-600 text-white p-5 rounded-[2rem] shadow-2xl relative overflow-hidden ring-4 ring-indigo-500/20">
+            <div className="flex items-start gap-4 relative z-10">
+                <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
+                </div>
+                <div className="flex-grow">
+                    <h4 className="font-black text-xs uppercase tracking-widest mb-1 opacity-80">{systemAlert.title}</h4>
+                    <p className="text-sm font-bold leading-tight">{systemAlert.body}</p>
+                </div>
+                <button onClick={() => setSystemAlert(null)} className="p-2 -mt-2 -mr-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
             </div>
-            <div className="flex-grow overflow-hidden">
-              <p className="text-xs font-black uppercase text-indigo-500 tracking-widest">{inAppAlert.title}</p>
-              <p className="text-sm font-bold text-zinc-800 dark:text-white truncate">{inAppAlert.body}</p>
-            </div>
-            <button onClick={() => setInAppAlert(null)} className="p-2 text-zinc-400">&times;</button>
+            {/* Barra de Progresso (20s) */}
+            <div className="absolute bottom-0 left-0 h-1.5 bg-white/30 transition-all duration-100 ease-linear" style={{ width: `${alertProgress}%` }}></div>
           </div>
         </div>
       )}
@@ -207,17 +233,17 @@ const Feed: React.FC = () => {
             authorInfo={viewingPulseGroup.author} 
             initialPulseIndex={0} 
             onClose={() => setViewingPulseGroup(null)} 
-            onDelete={handlePulseDeleted} 
+            onDelete={() => {}} 
             onViewProfile={handleSelectUser}
           />
       )}
       
-      <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={handleImagesConfirmed} />
+      <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={() => {}} />
       <CreatePostModal 
         isOpen={isCreatePostOpen} 
-        onClose={handleCloseCreatePost} 
-        onPostCreated={handleCloseCreatePost} 
-        initialImages={selectedMedia} 
+        onClose={() => setIsCreatePostOpen(false)} 
+        onPostCreated={() => setIsCreatePostOpen(false)} 
+        initialImages={[]} 
       />
       
       <CreatePulseModal isOpen={isCreatePulseOpen} onClose={() => setIsCreatePulseOpen(false)} onPulseCreated={() => setIsCreatePulseOpen(false)} />
@@ -226,7 +252,7 @@ const Feed: React.FC = () => {
       <ParadiseCameraModal isOpen={isParadiseOpen} onClose={() => setIsParadiseOpen(false)} />
 
       <style>{`
-        @keyframes slide-down { from { transform: translate(-50%, -100%); } to { transform: translate(-50%, 0); } }
+        @keyframes slide-down { from { transform: translate(-50%, -100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
         .animate-slide-down { animation: slide-down 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
       `}</style>
     </div>

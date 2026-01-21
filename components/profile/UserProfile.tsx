@@ -123,13 +123,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                 currentVibe: updatedData.currentVibe
             };
 
-            if (updatedData.username !== user.username) {
-                updates.lastUsernameChange = serverTimestamp();
-            }
-            if (updatedData.nickname !== (user.nickname || '')) {
-                updates.lastNicknameChange = serverTimestamp();
-            }
-
             await updateDoc(userRef, updates);
             await updateProfile(currentUser, { 
                 displayName: updatedData.username, 
@@ -138,8 +131,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
 
             setIsEditModalOpen(false);
         } catch (err) {
-            console.error("Update Error:", err);
-            alert("Erro ao salvar alterações.");
+            console.error(err);
         } finally {
             setIsSubmittingEdit(false);
         }
@@ -172,7 +164,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
             batch.set(myFollowing, { username: user?.username || 'User', avatar: user?.avatar || '', timestamp: serverTimestamp() });
             batch.set(theirFollowers, { username: currentUser.displayName || 'User', avatar: currentUser.photoURL || '', timestamp: serverTimestamp() });
             
-            // Criar Notificação para o destinatário
             const notificationRef = doc(collection(db, 'users', userId, 'notifications'));
             batch.set(notificationRef, {
                 type: 'follow',
@@ -188,152 +179,46 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
         }
     };
 
-    const handleDeletePermanentAccount = async () => {
-        if (!currentUser || isDeletingAccount) return;
-        if (!window.confirm("ATENÇÃO: Esta ação é irreversível. Todos os seus posts, mensagens e dados serão apagados permanentemente. Deseja continuar?")) return;
-
-        setIsDeletingAccount(true);
-        try {
-            const batch = writeBatch(db);
-            const userPosts = await getDocs(query(collection(db, 'posts'), where('userId', '==', currentUser.uid)));
-            userPosts.forEach(d => batch.delete(d.ref));
-            batch.delete(doc(db, 'users', currentUser.uid));
-            await batch.commit();
-            await signOut(auth);
-            window.location.reload();
-        } catch (e) {
-            console.error(e);
-            alert("Erro ao excluir conta.");
-            setIsDeletingAccount(false);
-        }
-    };
-
-    const handleAdminToggleVerify = async () => {
+    const handleSendSystemAlert = async (isGlobal: boolean) => {
         if (!isAdmin || isAdminActionLoading) return;
-        setIsAdminActionLoading(true);
-        try {
-            await updateDoc(doc(db, 'users', userId), {
-                isVerified: !user?.isVerified
-            });
-            setIsOptionsMenuOpen(false);
-        } catch (e) { console.error(e); } finally { setIsAdminActionLoading(false); }
-    };
-
-    const handleAdminBanUser = async () => {
-        if (!isAdmin || isAdminActionLoading) return;
-        if (isOwner) { alert("Você não pode banir a si mesmo."); return; }
-        if (!window.confirm(`SOU O DONO: Deseja banir permanentemente o usuário @${user.username}?`)) return;
-        
-        setIsAdminActionLoading(true);
-        try {
-            await addDoc(collection(db, 'banned_users_log'), {
-                userId,
-                username: user.username,
-                email: user.email,
-                bannedBy: currentUser?.email,
-                timestamp: serverTimestamp()
-            });
-
-            const batch = writeBatch(db);
-            const userPosts = await getDocs(query(collection(db, 'posts'), where('userId', '==', userId)));
-            userPosts.forEach(p => batch.delete(p.ref));
-            
-            batch.update(doc(db, 'users', userId), {
-                isBanned: true,
-                banTimestamp: serverTimestamp(),
-                username: `BANIDO_${user.username}`,
-                username_lowercase: `banido_${user.username.toLowerCase()}`
-            });
-
-            await batch.commit();
-            alert(`O usuário @${user.username} foi banido com sucesso.`);
-            setIsOptionsMenuOpen(false);
-        } catch (e) { 
-            console.error(e); 
-            alert("Erro ao executar banimento.");
-        } finally { 
-            setIsAdminActionLoading(false); 
-        }
-    };
-
-    const handleAdminGlobalMessage = async () => {
-        if (!isAdmin || isAdminActionLoading) return;
-        const message = window.prompt("Digite a mensagem que deseja enviar para TODOS os usuários da rede:");
+        const message = window.prompt(isGlobal ? "MENSAGEM PARA TODOS OS USUÁRIOS (Feed):" : `MENSAGEM PARA @${user.username} (Feed):`);
         if (!message || !message.trim()) return;
 
-        if (!window.confirm("Isso enviará uma mensagem privada para cada usuário cadastrado. Tem certeza?")) return;
-
         setIsAdminActionLoading(true);
         try {
-            const usersSnap = await getDocs(collection(db, 'users'));
-            const total = usersSnap.size;
-            let count = 0;
-
-            // Processar em lotes para evitar timeout do navegador
-            for (const userDoc of usersSnap.docs) {
-                const targetUserId = userDoc.id;
-                if (targetUserId === currentUser?.uid) continue;
-
-                const targetData = userDoc.data();
-                const conversationId = [currentUser!.uid, targetUserId].sort().join('_');
-                const conversationRef = doc(db, 'conversations', conversationId);
-
+            if (isGlobal) {
+                const usersSnap = await getDocs(collection(db, 'users'));
                 const batch = writeBatch(db);
-
-                // Garante que a conversa existe
-                batch.set(conversationRef, {
-                    participants: [currentUser!.uid, targetUserId],
-                    participantInfo: {
-                        [currentUser!.uid]: { username: currentUser!.displayName, avatar: currentUser!.photoURL },
-                        [targetUserId]: { username: targetData.username, avatar: targetData.avatar }
-                    },
-                    lastMessage: { text: message, senderId: currentUser!.uid, timestamp: serverTimestamp() },
-                    timestamp: serverTimestamp()
-                }, { merge: true });
-
-                // Adiciona a mensagem
-                const msgRef = doc(collection(db, 'conversations', conversationId, 'messages'));
-                batch.set(msgRef, {
-                    senderId: currentUser!.uid,
-                    text: message,
-                    timestamp: serverTimestamp(),
-                    mediaType: 'text'
+                usersSnap.docs.forEach(uDoc => {
+                    const alertRef = doc(collection(db, 'notifications_in_app'));
+                    batch.set(alertRef, {
+                        recipientId: uDoc.id,
+                        title: "Aviso da Néos",
+                        body: message,
+                        type: 'system',
+                        read: false,
+                        timestamp: serverTimestamp()
+                    });
                 });
-
                 await batch.commit();
-                count++;
+                alert("Mensagem global enviada para o feed de todos!");
+            } else {
+                await addDoc(collection(db, 'notifications_in_app'), {
+                    recipientId: userId,
+                    title: "Mensagem do Admin",
+                    body: message,
+                    type: 'system',
+                    read: false,
+                    timestamp: serverTimestamp()
+                });
+                alert(`Mensagem enviada para o feed de @${user.username}!`);
             }
-            alert(`Mensagem enviada com sucesso para ${count} usuários.`);
             setIsOptionsMenuOpen(false);
         } catch (e) {
             console.error(e);
-            alert("Erro ao enviar mensagens globais.");
+            alert("Erro ao enviar alerta.");
         } finally {
             setIsAdminActionLoading(false);
-        }
-    };
-
-    const handleReportProfile = async () => {
-        if (!currentUser) return;
-        const reason = window.prompt("Por que você está denunciando este perfil? (Conteúdo inapropriado, Spam, etc.)");
-        if (!reason) return;
-
-        try {
-            await addDoc(collection(db, 'reports'), {
-                reporterId: currentUser.uid,
-                reporterUsername: currentUser.displayName,
-                targetUserId: userId,
-                targetUsername: user?.username,
-                reason,
-                type: 'profile',
-                timestamp: serverTimestamp(),
-                status: 'pending'
-            });
-            alert("Denúncia enviada com sucesso. Nossa equipe analisará em breve.");
-            setIsOptionsMenuOpen(false);
-        } catch (e) {
-            console.error(e);
-            alert("Erro ao enviar denúncia.");
         }
     };
 
@@ -383,19 +268,11 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                                                 {isAdmin && (
                                                     <>
                                                         <button 
-                                                            onClick={handleAdminToggleVerify} 
-                                                            className="w-full text-left px-4 py-3 text-sm text-sky-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3 border-t dark:border-zinc-800"
+                                                            onClick={() => handleSendSystemAlert(true)} 
+                                                            className="w-full text-left px-4 py-3 text-sm text-indigo-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3 border-t dark:border-zinc-800"
                                                         >
-                                                            <VerifiedBadge className="w-4 h-4" />
-                                                            {user?.isVerified ? "Remover Verificado" : "Dar Verificado"}
-                                                        </button>
-                                                        <button 
-                                                            onClick={handleAdminGlobalMessage} 
-                                                            disabled={isAdminActionLoading}
-                                                            className="w-full text-left px-4 py-3 text-sm text-sky-600 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3 border-t dark:border-zinc-800"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" /></svg>
-                                                            Enviar Mensagem Global
+                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" strokeWidth={2}/></svg>
+                                                            Alerta para TODOS
                                                         </button>
                                                         <button 
                                                             onClick={() => setIsAdminDashboardOpen(true)} 
@@ -410,10 +287,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                                                 <button onClick={handleSignOut} className="w-full text-left px-4 py-3 text-sm text-zinc-700 dark:text-zinc-200 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3">
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth={2.5}/></svg>
                                                     {t('profile.logout')}
-                                                </button>
-                                                <button onClick={handleDeletePermanentAccount} disabled={isDeletingAccount} className="w-full text-left px-4 py-3 text-sm text-red-500 font-black hover:bg-red-50 dark:hover:bg-red-950/20 border-t dark:border-zinc-800 flex items-center gap-3 mt-1">
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                    Excluir conta Néos permanente
                                                 </button>
                                             </div>
                                         )}
@@ -435,24 +308,15 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                                                 {isAdmin && (
                                                     <>
                                                         <button 
-                                                            onClick={handleAdminToggleVerify} 
-                                                            disabled={isAdminActionLoading}
-                                                            className="w-full text-left px-4 py-3 text-sm text-sky-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3"
+                                                            onClick={() => handleSendSystemAlert(false)} 
+                                                            className="w-full text-left px-4 py-3 text-sm text-indigo-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3 border-b dark:border-zinc-800"
                                                         >
-                                                            <VerifiedBadge className="w-4 h-4" />
-                                                            {user?.isVerified ? "Remover Verificado" : "Dar Verificado"}
-                                                        </button>
-                                                        <button 
-                                                            onClick={handleAdminBanUser} 
-                                                            disabled={isAdminActionLoading}
-                                                            className="w-full text-left px-4 py-3 text-sm text-red-500 font-black hover:bg-red-50 dark:hover:bg-red-950/20 border-t dark:border-zinc-800 flex items-center gap-3"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" /></svg>
-                                                            Banir Usuário Néos
+                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" strokeWidth={2}/></svg>
+                                                            Alerta para este usuário
                                                         </button>
                                                     </>
                                                 )}
-                                                <button onClick={handleReportProfile} className="w-full text-left px-4 py-3 text-sm text-red-600 dark:text-red-400 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3 border-t dark:border-zinc-800">
+                                                <button className="w-full text-left px-4 py-3 text-sm text-red-600 dark:text-red-400 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3">
                                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                                                     Denunciar Perfil
                                                 </button>
@@ -479,14 +343,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                     </div>
                 ))}
             </div>
-
-            {selectedPost && (
-                <div className="fixed inset-0 bg-black/95 z-[200] flex flex-col items-center justify-center p-0 md:p-10" onClick={() => setSelectedPost(null)}>
-                    <div className="w-full max-w-xl h-full overflow-y-auto no-scrollbar pt-10" onClick={e => e.stopPropagation()}>
-                        <Post post={selectedPost} onPostDeleted={(id) => { setSelectedPost(null); setPosts(prev => prev.filter(p => p.id !== id)); }} />
-                    </div>
-                </div>
-            )}
 
             <EditProfileModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} user={user || {}} onUpdate={handleUpdateProfile} isSubmitting={isSubmittingEdit} />
             <AdminDashboardModal isOpen={isAdminDashboardOpen} onClose={() => setIsAdminDashboardOpen(false)} />
