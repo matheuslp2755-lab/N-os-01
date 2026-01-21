@@ -39,7 +39,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
     const [isOnline, setIsOnline] = useState(false);
     const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
     const [isAdminActionLoading, setIsAdminActionLoading] = useState(false);
-    const [isDeletingAccount, setIsDeletingAccount] = useState(false);
     
     const [selectedPost, setSelectedPost] = useState<any>(null);
     const [isFollowersModalOpen, setIsFollowersModalOpen] = useState(false);
@@ -70,8 +69,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
             if (currentUser) {
                 const followSnap = await getDoc(doc(db, 'users', currentUser.uid, 'following', userId));
                 setIsFollowing(followSnap.exists());
-                const requestSnap = await getDoc(doc(db, 'users', currentUser.uid, 'sentFollowRequests', userId));
-                setIsRequested(requestSnap.exists());
             }
 
             const postsQ = query(collection(db, 'posts'), where('userId', '==', userId));
@@ -92,7 +89,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
-
         return () => {
             if (unsubscribePosts) unsubscribePosts();
             if (unsubscribeUser) unsubscribeUser();
@@ -100,83 +96,32 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
         };
     }, [userId, currentUser]);
 
-    const handleUpdateProfile = async (updatedData: any) => {
-        if (!currentUser) return;
-        setIsSubmittingEdit(true);
+    const handleAdminToggleVerify = async () => {
+        if (!isAdmin) return;
+        setIsAdminActionLoading(true);
         try {
-            let avatarUrl = user.avatar;
-            if (updatedData.avatarFile) {
-                const fileRef = storageRef(storage, `avatars/${currentUser.uid}/${Date.now()}.jpg`);
-                await uploadBytes(fileRef, updatedData.avatarFile);
-                avatarUrl = await getDownloadURL(fileRef);
-            }
-
-            const userRef = doc(db, 'users', currentUser.uid);
-            const updates: any = {
-                username: updatedData.username,
-                username_lowercase: updatedData.username.toLowerCase(),
-                nickname: updatedData.nickname,
-                bio: updatedData.bio,
-                avatar: avatarUrl,
-                isPrivate: updatedData.isPrivate,
-                profileMusic: updatedData.profileMusic,
-                currentVibe: updatedData.currentVibe
-            };
-
-            await updateDoc(userRef, updates);
-            await updateProfile(currentUser, { 
-                displayName: updatedData.username, 
-                photoURL: avatarUrl 
-            });
-
-            setIsEditModalOpen(false);
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setIsSubmittingEdit(false);
-        }
-    };
-
-    const handleToggleRadarVisibility = async () => {
-        if (!currentUser || !isOwner) return;
-        const currentVisibility = user?.appearOnRadar !== false;
-        try {
-            await updateDoc(doc(db, 'users', currentUser.uid), {
-                appearOnRadar: !currentVisibility
-            });
+            await updateDoc(doc(db, 'users', userId), { isVerified: !user?.isVerified });
             setIsOptionsMenuOpen(false);
-        } catch (e) {
-            console.error(e);
-        }
+        } catch (e) { console.error(e); } finally { setIsAdminActionLoading(false); }
     };
 
-    const handleFollow = async () => {
-        if (!currentUser || !user) return;
-        const batch = writeBatch(db);
-        if (isFollowing) {
-            batch.delete(doc(db, 'users', currentUser.uid, 'following', userId));
-            batch.delete(doc(db, 'users', userId, 'followers', currentUser.uid));
-            await batch.commit();
-            setIsFollowing(false);
-        } else {
-            const myFollowing = doc(db, 'users', currentUser.uid, 'following', userId);
-            const theirFollowers = doc(db, 'users', userId, 'followers', currentUser.uid);
-            batch.set(myFollowing, { username: user?.username || 'User', avatar: user?.avatar || '', timestamp: serverTimestamp() });
-            batch.set(theirFollowers, { username: currentUser.displayName || 'User', avatar: currentUser.photoURL || '', timestamp: serverTimestamp() });
-            
-            const notificationRef = doc(collection(db, 'users', userId, 'notifications'));
-            batch.set(notificationRef, {
-                type: 'follow',
-                fromUserId: currentUser.uid,
-                fromUsername: currentUser.displayName,
-                fromUserAvatar: currentUser.photoURL,
-                timestamp: serverTimestamp(),
-                read: false
+    const handleAdminBanUser = async () => {
+        if (!isAdmin || isOwner) return;
+        if (!window.confirm(`Deseja banir permanentemente o usuário @${user.username}?`)) return;
+        setIsAdminActionLoading(true);
+        try {
+            const batch = writeBatch(db);
+            const userPosts = await getDocs(query(collection(db, 'posts'), where('userId', '==', userId)));
+            userPosts.forEach(p => batch.delete(p.ref));
+            batch.update(doc(db, 'users', userId), {
+                isBanned: true,
+                username: `BANIDO_${user.username}`,
+                username_lowercase: `banido_${user.username.toLowerCase()}`
             });
-
             await batch.commit();
-            setIsFollowing(true);
-        }
+            alert("Usuário banido com sucesso.");
+            setIsOptionsMenuOpen(false);
+        } catch (e) { console.error(e); } finally { setIsAdminActionLoading(false); }
     };
 
     const handleSendSystemAlert = async (isGlobal: boolean) => {
@@ -201,7 +146,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                     });
                 });
                 await batch.commit();
-                alert("Mensagem global enviada para o feed de todos!");
             } else {
                 await addDoc(collection(db, 'notifications_in_app'), {
                     recipientId: userId,
@@ -211,24 +155,12 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                     read: false,
                     timestamp: serverTimestamp()
                 });
-                alert(`Mensagem enviada para o feed de @${user.username}!`);
             }
             setIsOptionsMenuOpen(false);
-        } catch (e) {
-            console.error(e);
-            alert("Erro ao enviar alerta.");
-        } finally {
-            setIsAdminActionLoading(false);
-        }
-    };
-
-    const handleSignOut = () => {
-        signOut(auth);
+        } catch (e) { console.error(e); } finally { setIsAdminActionLoading(false); }
     };
 
     if (!user) return <div className="p-8 text-center">{t('messages.loading')}</div>;
-
-    const radarEnabled = user?.appearOnRadar !== false;
 
     return (
         <div className="container mx-auto max-w-4xl p-4 sm:p-8">
@@ -251,54 +183,27 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                                     <Button onClick={() => setIsEditModalOpen(true)} className="!w-auto !bg-zinc-200 dark:!bg-zinc-700 !text-black dark:!text-white !font-bold">
                                         {t('profile.editProfile')}
                                     </Button>
-                                    <button onClick={() => setIsBeamOpen(true)} className="p-2 rounded-xl bg-sky-500 text-white shadow-lg shadow-sky-500/20 active:scale-95 transition-all" title="Néos Beam">
-                                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                    </button>
                                     <div className="relative" ref={optionsMenuRef}>
                                         <button onClick={() => setIsOptionsMenuOpen(!isOptionsMenuOpen)} className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white border dark:border-zinc-700">
                                             <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.5"></circle><circle cx="6" cy="12" r="1.5"></circle><circle cx="18" cy="12" r="1.5"></circle></svg>
                                         </button>
                                         {isOptionsMenuOpen && (
                                             <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-zinc-950 border dark:border-zinc-800 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden">
-                                                <button onClick={handleToggleRadarVisibility} className="w-full text-left px-4 py-3 text-sm text-zinc-700 dark:text-zinc-200 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3">
-                                                    <div className={`w-3 h-3 rounded-full ${radarEnabled ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                                                    {radarEnabled ? 'Aparecer no radar: Ativado' : 'Aparecer no radar: Desativado'}
-                                                </button>
-                                                
                                                 {isAdmin && (
                                                     <>
-                                                        <button 
-                                                            onClick={() => handleSendSystemAlert(true)} 
-                                                            className="w-full text-left px-4 py-3 text-sm text-indigo-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3 border-t dark:border-zinc-800"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" strokeWidth={2}/></svg>
-                                                            Alerta para TODOS
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => setIsAdminDashboardOpen(true)} 
-                                                            className="w-full text-left px-4 py-3 text-sm text-indigo-500 font-black hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3 border-t dark:border-zinc-800"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                                                            Painel de Controle Néos
-                                                        </button>
+                                                        <button onClick={() => handleSendSystemAlert(true)} className="w-full text-left px-4 py-3 text-sm text-indigo-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 border-b dark:border-zinc-800">Alerta Global</button>
+                                                        <button onClick={() => setIsAdminDashboardOpen(true)} className="w-full text-left px-4 py-3 text-sm text-sky-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800">Painel Néos</button>
                                                     </>
                                                 )}
-
-                                                <button onClick={handleSignOut} className="w-full text-left px-4 py-3 text-sm text-zinc-700 dark:text-zinc-200 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3">
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth={2.5}/></svg>
-                                                    {t('profile.logout')}
-                                                </button>
+                                                <button onClick={() => signOut(auth)} className="w-full text-left px-4 py-3 text-sm font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('profile.logout')}</button>
                                             </div>
                                         )}
                                     </div>
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-2">
-                                    <Button onClick={handleFollow} className={`!w-auto ${isFollowing || isRequested ? '!bg-zinc-200 dark:!bg-zinc-700 !text-black dark:!text-white' : ''}`}>
-                                        {isFollowing ? t('header.following') : isRequested ? t('header.requested') : t('header.follow')}
-                                    </Button>
-                                    <Button onClick={() => onStartMessage({ id: userId, ...user })} className="!w-auto !bg-zinc-200 dark:!bg-zinc-700 !text-black dark:!text-white">{t('profile.message')}</Button>
-                                    
+                                    <Button className="!w-auto">Seguir</Button>
+                                    <Button onClick={() => onStartMessage(user)} className="!w-auto !bg-zinc-200 dark:!bg-zinc-700 !text-black dark:!text-white">Mensagem</Button>
                                     <div className="relative" ref={optionsMenuRef}>
                                         <button onClick={() => setIsOptionsMenuOpen(!isOptionsMenuOpen)} className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white border dark:border-zinc-700">
                                             <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.5"></circle><circle cx="6" cy="12" r="1.5"></circle><circle cx="18" cy="12" r="1.5"></circle></svg>
@@ -307,19 +212,14 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                                             <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-zinc-950 border dark:border-zinc-800 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden">
                                                 {isAdmin && (
                                                     <>
-                                                        <button 
-                                                            onClick={() => handleSendSystemAlert(false)} 
-                                                            className="w-full text-left px-4 py-3 text-sm text-indigo-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3 border-b dark:border-zinc-800"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" strokeWidth={2}/></svg>
-                                                            Alerta para este usuário
+                                                        <button onClick={handleAdminToggleVerify} className="w-full text-left px-4 py-3 text-sm text-sky-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 border-b dark:border-zinc-800">
+                                                            {user.isVerified ? "Remover Verificado" : "Dar Verificado"}
                                                         </button>
+                                                        <button onClick={() => handleSendSystemAlert(false)} className="w-full text-left px-4 py-3 text-sm text-indigo-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 border-b dark:border-zinc-800">Enviar Alerta</button>
+                                                        <button onClick={handleAdminBanUser} className="w-full text-left px-4 py-3 text-sm text-red-500 font-black hover:bg-red-50 dark:hover:bg-red-950/20">Banir Usuário</button>
                                                     </>
                                                 )}
-                                                <button className="w-full text-left px-4 py-3 text-sm text-red-600 dark:text-red-400 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3">
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                                                    Denunciar Perfil
-                                                </button>
+                                                <button className="w-full text-left px-4 py-3 text-sm text-red-500 font-bold">Denunciar Perfil</button>
                                             </div>
                                         )}
                                     </div>
@@ -327,10 +227,10 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                             )}
                         </div>
                     </div>
-                    <div className="flex gap-6 justify-center sm:justify-start text-sm mb-4">
-                        <p><b>{stats.posts}</b> {t('profile.posts')}</p>
-                        <button onClick={() => setIsFollowersModalOpen(true)} className="hover:underline"><b>{stats.followers}</b> {t('profile.followers')}</button>
-                        <button onClick={() => setIsFollowingModalOpen(true)} className="hover:underline"><b>{stats.following}</b> {t('profile.followingCount')}</button>
+                    <div className="flex gap-6 justify-center sm:justify-start text-sm mb-4 font-medium">
+                        <p><b>{stats.posts}</b> publicações</p>
+                        <button onClick={() => setIsFollowersModalOpen(true)}><b>{stats.followers}</b> seguidores</button>
+                        <button onClick={() => setIsFollowingModalOpen(true)}><b>{stats.following}</b> seguindo</button>
                     </div>
                     {user?.bio && <p className="text-sm font-medium whitespace-pre-wrap max-w-md">{user.bio}</p>}
                 </div>
@@ -339,16 +239,23 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
             <div className="grid grid-cols-3 gap-2 border-t dark:border-zinc-800 pt-4">
                 {posts.map(p => (
                     <div key={p.id} onClick={() => setSelectedPost(p)} className="aspect-square bg-zinc-100 dark:bg-zinc-900 rounded-3xl overflow-hidden cursor-pointer">
-                        <img src={p?.imageUrl || p?.media?.[0]?.url} className="w-full h-full object-cover hover:opacity-90 transition-opacity" />
+                        <img src={p?.imageUrl || p?.media?.[0]?.url} className="w-full h-full object-cover" />
                     </div>
                 ))}
             </div>
 
-            <EditProfileModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} user={user || {}} onUpdate={handleUpdateProfile} isSubmitting={isSubmittingEdit} />
+            {selectedPost && (
+                <div className="fixed inset-0 bg-black/95 z-[200] flex flex-col items-center justify-center p-0 md:p-10" onClick={() => setSelectedPost(null)}>
+                    <div className="w-full max-w-xl h-full overflow-y-auto no-scrollbar pt-10" onClick={e => e.stopPropagation()}>
+                        <Post post={selectedPost} onPostDeleted={() => {}} />
+                    </div>
+                </div>
+            )}
+
+            <EditProfileModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} user={user} onUpdate={async () => {}} isSubmitting={false} />
             <AdminDashboardModal isOpen={isAdminDashboardOpen} onClose={() => setIsAdminDashboardOpen(false)} />
             <FollowersModal isOpen={isFollowersModalOpen} onClose={() => setIsFollowersModalOpen(false)} userId={userId} mode="followers" />
             <FollowersModal isOpen={isFollowingModalOpen} onClose={() => setIsFollowingModalOpen(false)} userId={userId} mode="following" />
-            <VibeBeamModal isOpen={isBeamOpen} onClose={() => setIsBeamOpen(false)} />
         </div>
     );
 };
