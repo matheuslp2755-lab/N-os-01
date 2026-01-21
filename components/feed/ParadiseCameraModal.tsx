@@ -8,26 +8,8 @@ interface ParadiseCameraModalProps {
     onClose: () => void;
 }
 
-type CamMode = 'Vídeo' | 'Foto' | 'Live';
-
-interface CameraModel {
-    id: string;
-    name: string;
-    icon: string;
-    filter: string;
-}
-
-const CAMERA_MODELS: CameraModel[] = [
-    { id: 'reel', name: 'Reel', icon: '📽️', filter: 'contrast(1.1) sepia(0.3) saturate(1.4)' },
-    { id: 'mangacore', name: 'MangaCore', icon: '📸', filter: 'grayscale(1) contrast(1.8) brightness(1.1)' },
-    { id: 'kodak200', name: 'Kodak 200', icon: '🟡', filter: 'contrast(1.1) saturate(1.2) hue-rotate(-5deg) brightness(1.05)' },
-    { id: 'g7x2', name: 'G7X2', icon: '📷', filter: 'brightness(1.15) contrast(1.05) saturate(1.1)' },
-    { id: 'blue3k', name: 'Blue3K', icon: '🔵', filter: 'hue-rotate(190deg) brightness(1.1) saturate(1.3)' },
-];
-
 const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClose }) => {
-    const [activeMode, setActiveMode] = useState<CamMode>('Foto');
-    const [selectedCamera, setSelectedCamera] = useState<CameraModel>(CAMERA_MODELS[2]);
+    const [activeMode, setActiveMode] = useState<'Foto' | 'Vídeo'>('Foto');
     const [zoom, setZoom] = useState(1);
     const [aspectRatio, setAspectRatio] = useState<'3:4' | '1:1' | '9:16' | 'full'>('3:4');
     const [flash, setFlash] = useState(false);
@@ -42,10 +24,12 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
 
+    // Preset GRF CLASSIC 2016 - CSS Filter approximation para o preview
+    const grfFilterCSS = "brightness(0.92) contrast(0.82) saturate(0.85) sepia(0.06) blur(0.2px)";
+
     const startCamera = useCallback(async () => {
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
         try {
-            // Solicita a maior resolução possível do sensor (4K / Ideal)
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { 
                     facingMode, 
@@ -68,7 +52,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         return () => streamRef.current?.getTracks().forEach(t => t.stop());
     }, [isOpen, startCamera, viewingMedia]);
 
-    // Foco Manual por Toque
     const handleFocus = async (e: React.MouseEvent<HTMLDivElement>) => {
         if (!videoRef.current || !streamRef.current) return;
         const rect = videoRef.current.getBoundingClientRect();
@@ -84,8 +67,62 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 await track.applyConstraints({
                     advanced: [{ focusMode: 'manual', pointsOfInterest: [{ x, y }] }] as any
                 });
-            } catch (e) { console.log("Foco manual não suportado hardware"); }
+            } catch (e) { console.log("Foco manual não suportado"); }
         }
+    };
+
+    const applyGRFPostProcessing = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+        // 1. Camada de Grão Dinâmico (Digital Noise)
+        const grainData = ctx.createImageData(width, height);
+        const buffer = grainData.data;
+        for (let i = 0; i < buffer.length; i += 4) {
+            const noise = (Math.random() - 0.5) * 45; // Intensidade do grão (18% approx)
+            buffer[i] = buffer[i] + noise;
+            buffer[i+1] = buffer[i+1] + noise;
+            buffer[i+2] = buffer[i+2] + noise;
+        }
+        
+        // Criar canvas temporário para o grão para aplicar blend mode
+        const grainCanvas = document.createElement('canvas');
+        grainCanvas.width = width;
+        grainCanvas.height = height;
+        grainCanvas.getContext('2d')?.putImageData(grainData, 0, 0);
+        
+        ctx.globalAlpha = 0.18;
+        ctx.globalCompositeOperation = 'overlay';
+        ctx.drawImage(grainCanvas, 0, 0);
+        ctx.globalAlpha = 1.0;
+        ctx.globalCompositeOperation = 'source-over';
+
+        // 2. Vignette (Sutil)
+        const grad = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, Math.sqrt(width**2 + height**2)/1.8);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(1, 'rgba(0,0,0,0.15)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, width, height);
+
+        // 3. Marca d'água NÉOS
+        ctx.font = `black ${Math.floor(width * 0.045)}px sans-serif`;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.textAlign = 'right';
+        ctx.shadowColor = 'rgba(0,0,0,0.2)';
+        ctx.shadowBlur = 5;
+        ctx.fillText("NÉOS", width * 0.95, height * 0.08);
+        ctx.shadowBlur = 0;
+
+        // 4. Data Vertical GRF Amarela (Lado Esquerdo, em pé)
+        const now = new Date();
+        const dateStr = `${now.getDate().toString().padStart(2, '0')} ${(now.getMonth() + 1).toString().padStart(2, '0')} '${now.getFullYear().toString().slice(-2)}`;
+        ctx.save();
+        ctx.translate(width * 0.06, height * 0.85);
+        ctx.rotate(-Math.PI / 2); 
+        ctx.font = `bold ${Math.floor(width * 0.038)}px "Courier New", Courier, monospace`;
+        ctx.fillStyle = '#FFC83D'; // Cor oficial GRF
+        ctx.globalAlpha = 0.9;
+        ctx.shadowColor = 'rgba(0,0,0,0.4)';
+        ctx.shadowBlur = 10;
+        ctx.fillText(dateStr, 0, 0);
+        ctx.restore();
     };
 
     const executeCapture = () => {
@@ -95,18 +132,19 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
         const ctx = canvas.getContext('2d', { alpha: false });
         if (ctx) {
-            // Usa resolução nativa do vídeo sem perdas
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            ctx.imageSmoothingEnabled = false;
+            ctx.imageSmoothingEnabled = true;
 
+            // Base Filters (Preset GRF Logic)
+            ctx.filter = grfFilterCSS;
+            
             ctx.save();
             if (facingMode === 'user') {
                 ctx.translate(canvas.width, 0);
                 ctx.scale(-1, 1);
             }
 
-            // Desenha o vídeo com o zoom atual
             if (zoom > 1) {
                 const zW = canvas.width / zoom;
                 const zH = canvas.height / zoom;
@@ -117,33 +155,13 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 ctx.drawImage(video, 0, 0);
             }
             
-            // Filtro Vintage
-            ctx.filter = selectedCamera.filter;
-            ctx.drawImage(canvas, 0, 0);
-
-            // Marca d'água NÉOS (Canto superior direito)
+            ctx.restore();
             ctx.filter = 'none';
-            ctx.font = `black ${Math.floor(canvas.width * 0.045)}px sans-serif`;
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-            ctx.textAlign = 'right';
-            ctx.fillText("NÉOS", canvas.width * 0.95, canvas.height * 0.08);
 
-            // Data Vertical Amarela (Lado Esquerdo)
-            const now = new Date();
-            const dateStr = `${now.getDate().toString().padStart(2, '0')} ${(now.getMonth() + 1).toString().padStart(2, '0')} ${now.getFullYear().toString().slice(-2)}`;
-            ctx.save();
-            ctx.translate(canvas.width * 0.06, canvas.height * 0.85);
-            ctx.rotate(-Math.PI / 2); 
-            ctx.font = `bold ${Math.floor(canvas.width * 0.038)}px Courier, monospace`;
-            ctx.fillStyle = '#fbbf24'; 
-            ctx.shadowColor = 'rgba(0,0,0,0.5)';
-            ctx.shadowBlur = 10;
-            ctx.fillText(dateStr, 0, 0);
-            ctx.restore();
+            // Post Processing (Grain, Watermark, Date)
+            applyGRFPostProcessing(ctx, canvas.width, canvas.height);
             
-            ctx.restore();
-            
-            const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.92); // Compression simulation
             setCapturedMedia(prev => [dataUrl, ...prev]);
         }
     };
@@ -171,10 +189,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     return (
         <div className="fixed inset-0 bg-black z-[600] flex flex-col overflow-hidden text-white font-sans touch-none select-none">
             {viewingMedia && (
-                <div className="fixed inset-0 z-[800] bg-black flex flex-col">
+                <div className="fixed inset-0 z-[800] bg-black flex flex-col animate-fade-in">
                     <header className="p-6 flex justify-between items-center bg-black/40 backdrop-blur-xl border-b border-white/10 z-10">
-                        <button onClick={() => setViewingMedia(null)} className="p-2 bg-white/10 rounded-full"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M15 19l-7-7 7-7" /></svg></button>
-                        <button onClick={() => { const link = document.createElement('a'); link.href = viewingMedia; link.download = "neos-paradise.jpg"; link.click(); }} className="p-2 bg-sky-500 rounded-full shadow-lg"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg></button>
+                        <button onClick={() => setViewingMedia(null)} className="p-2 bg-white/10 rounded-full">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M15 19l-7-7 7-7" /></svg>
+                        </button>
+                        <button onClick={() => { const link = document.createElement('a'); link.href = viewingMedia; link.download = "neos-paradise.jpg"; link.click(); }} className="p-2 bg-sky-500 rounded-full shadow-lg">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        </button>
                     </header>
                     <div className="flex-grow flex items-center justify-center p-4">
                         <img src={viewingMedia} className="max-w-full max-h-full rounded-3xl object-contain shadow-2xl" />
@@ -197,7 +219,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                         muted 
                         className="w-full h-full object-cover transition-transform duration-300"
                         style={{ 
-                            filter: selectedCamera.filter, 
+                            filter: grfFilterCSS, 
                             transform: `${facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)'} scale(${zoom})`,
                             imageRendering: 'optimizeQuality'
                         }}
@@ -205,17 +227,17 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                     
                     {focusPoint && (
                         <div 
-                            className="absolute w-16 h-16 border-2 border-sky-500 rounded-full animate-ping pointer-events-none"
+                            className="absolute w-16 h-16 border-2 border-[#FFC83D] rounded-full animate-ping pointer-events-none"
                             style={{ left: focusPoint.x - 32, top: focusPoint.y - 32 }}
                         ></div>
                     )}
 
                     <div className="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between">
                          <div className="flex justify-between items-start opacity-60">
-                             <div className="text-[10px] font-mono leading-tight uppercase">Raw_Sensor<br/>4K_Native<br/>HDR_ON</div>
-                             <div className="text-[10px] font-mono text-right leading-tight uppercase">ISO_Auto<br/>{Math.floor(canvasRef.current?.width || 0)}px<br/>60FPS</div>
+                             <div className="text-[10px] font-mono leading-tight uppercase">Classic_2016<br/>4K_GRF_EMU<br/>Grain_18%</div>
+                             <div className="text-[10px] font-mono text-right leading-tight uppercase">ISO_Auto<br/>HDR_OFF<br/>60FPS</div>
                          </div>
-                         {countdown && <div className="absolute inset-0 flex items-center justify-center"><span className="text-9xl font-black italic text-white animate-bounce">{countdown}</span></div>}
+                         {countdown && <div className="absolute inset-0 flex items-center justify-center"><span className="text-9xl font-black italic text-[#FFC83D] animate-bounce">{countdown}</span></div>}
                          <div className="flex flex-col items-center gap-1 mb-8">
                              <div className="flex gap-4 bg-black/50 backdrop-blur-xl px-4 py-2 rounded-full border border-white/10 pointer-events-auto">
                                  {[1, 1.5, 2, 4].map(z => (
@@ -228,7 +250,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             </div>
 
             <div className="flex justify-around items-center px-6 py-4 bg-black/90 backdrop-blur-md">
-                <button onClick={() => setFlash(!flash)} className={`p-3 rounded-2xl transition-all ${flash ? 'bg-yellow-400 text-black shadow-lg' : 'bg-white/5 text-white/80'}`}>
+                <button onClick={() => setFlash(!flash)} className={`p-3 rounded-2xl transition-all ${flash ? 'bg-[#FFC83D] text-black shadow-lg' : 'bg-white/5 text-white/80'}`}>
                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                 </button>
                 <button onClick={() => setTimer(prev => prev === 0 ? 3 : prev === 3 ? 10 : 0)} className={`p-3 rounded-2xl transition-all ${timer > 0 ? 'bg-sky-500 text-white shadow-lg' : 'bg-white/5 text-white/80'}`}>
@@ -242,14 +264,17 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                 <button onClick={onClose} className="p-3 bg-red-500/10 text-red-500 rounded-2xl"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
 
-            <div className="bg-[#0a0a0a] py-6 border-t border-white/5 shadow-inner">
-                <div className="flex gap-6 overflow-x-auto px-10 no-scrollbar items-center">
-                    {CAMERA_MODELS.map((cam) => (
-                        <button key={cam.id} onClick={() => setSelectedCamera(cam)} className={`flex flex-col items-center shrink-0 gap-3 transition-all duration-500 ${selectedCamera.id === cam.id ? 'scale-110 opacity-100' : 'opacity-30 blur-[0.5px]'}`}>
-                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl bg-zinc-800 border-2 ${selectedCamera.id === cam.id ? 'border-sky-500 ring-4 ring-sky-500/20 shadow-2xl' : 'border-white/10'}`}>{cam.icon}</div>
-                            <span className={`text-[9px] font-black uppercase tracking-[0.2em] transition-colors ${selectedCamera.id === cam.id ? 'text-sky-500' : 'text-zinc-500'}`}>{cam.name}</span>
-                        </button>
-                    ))}
+            <div className="bg-[#0a0a0a] py-8 border-t border-white/5 shadow-inner">
+                <div className="flex justify-center items-center">
+                    <div className="flex flex-col items-center gap-3 scale-110">
+                        <div className="w-16 h-16 rounded-[1.5rem] flex items-center justify-center bg-zinc-800 border-2 border-[#FFC83D] ring-4 ring-[#FFC83D]/20 shadow-[0_0_30px_rgba(255,200,61,0.2)]">
+                            <svg className="w-8 h-8 text-[#FFC83D]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                <path d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-[#FFC83D]">GRF CLASSIC</span>
+                    </div>
                 </div>
             </div>
 
@@ -266,7 +291,11 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             </footer>
 
             <canvas ref={canvasRef} className="hidden" />
-            <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
+            <style>{`
+                .no-scrollbar::-webkit-scrollbar { display: none; }
+                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+            `}</style>
         </div>
     );
 };
