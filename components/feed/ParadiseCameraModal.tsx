@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { auth, db, storage, storageRef, uploadBytes, getDownloadURL, collection, addDoc, serverTimestamp } from '../../firebase';
 import Button from '../common/Button';
@@ -7,167 +8,43 @@ interface ParadiseCameraModalProps {
     onClose: () => void;
 }
 
-type VibeEffect = 'ultra_analog' | 'cinematic_pro' | 'soft_pastel' | 'vhs_lofi';
-type LensMM = 24 | 35 | 50 | 85 | 101;
-type CamMode = 'photo' | 'video';
+type CamMode = 'Vídeo' | 'Foto' | 'Live';
 
-interface EffectConfig {
-    id: VibeEffect;
+interface CameraModel {
+    id: string;
     name: string;
-    label: string;
-    exposure: number;
-    contrast: number;
-    highlights: number;
-    shadows: number;
-    sharpness: number;
-    grain: number;
-    saturation: number;
-    temp: number;
-    vignette: number;
+    icon: string;
+    filter: string;
+    overlay?: string;
+    isPremium?: boolean;
 }
 
-const CAMERA_ENGINE_PACKS: Record<VibeEffect, EffectConfig> = {
-    ultra_analog: { 
-        id: 'ultra_analog', name: 'Kodak 400', label: '🎞️', 
-        exposure: 1.05, contrast: 1.2, highlights: -0.1, shadows: 0.1, 
-        sharpness: 30, grain: 12, saturation: 1.1, temp: 5, vignette: 0.1
-    },
-    cinematic_pro: { 
-        id: 'cinematic_pro', name: 'Arri Raw', label: '🎬', 
-        exposure: 1.0, contrast: 1.3, highlights: -0.2, shadows: 0.2, 
-        sharpness: 50, grain: 5, saturation: 1.2, temp: -5, vignette: 0.2
-    },
-    soft_pastel: { 
-        id: 'soft_pastel', name: 'Fuji Astia', label: '🌸', 
-        exposure: 1.15, contrast: 0.9, highlights: 0.1, shadows: 0.2, 
-        sharpness: 10, grain: 8, saturation: 0.95, temp: 10, vignette: 0.05
-    },
-    vhs_lofi: { 
-        id: 'vhs_lofi', name: 'VHS-C', label: '📼', 
-        exposure: 1.1, contrast: 0.8, highlights: -0.1, shadows: 0.3, 
-        sharpness: 0, grain: 40, saturation: 0.8, temp: -10, vignette: 0.3
-    }
-};
+const CAMERA_MODELS: CameraModel[] = [
+    { id: 'reel', name: 'Reel', icon: '📽️', filter: 'contrast(1.1) sepia(0.2) saturate(1.2)' },
+    { id: 'mangacore', name: 'MangaCore', icon: '📸', filter: 'grayscale(1) contrast(1.5) brightness(1.2)' },
+    { id: 'kodak200', name: 'Kodak 200', icon: '🟡', filter: 'contrast(1.05) saturate(1.1) hue-rotate(-5deg)' },
+    { id: 'g7x2', name: 'G7X2', icon: '📷', filter: 'brightness(1.1) contrast(1.1) saturate(1.05)', isPremium: true },
+    { id: 'blue3k', name: 'Blue3K', icon: '🔵', filter: 'hue-rotate(190deg) brightness(1.05) saturate(1.2)' },
+    { id: 'dcr', name: 'DCR', icon: '📹', filter: 'contrast(0.9) brightness(1.1) saturate(0.8) blur(0.5px)', isPremium: true },
+    { id: 'fuji-x', name: 'FUJI-X', icon: '🔴', filter: 'contrast(1.2) saturate(1.3) brightness(1.05)' },
+    { id: 'nokia', name: 'NOKIA', icon: '📱', filter: 'pixelate(4) contrast(0.8) brightness(1.2)', isPremium: true },
+];
 
 const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClose }) => {
+    const [activeMode, setActiveMode] = useState<CamMode>('Foto');
+    const [selectedCamera, setSelectedCamera] = useState<CameraModel>(CAMERA_MODELS[2]); // Kodak 200 default
+    const [zoom, setZoom] = useState(1);
+    const [aspectRatio, setAspectRatio] = useState<'3:4' | '1:1' | '9:16' | 'full'>('3:4');
+    const [flash, setFlash] = useState(false);
+    const [timer, setTimer] = useState(false);
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
-    const [activeVibe, setActiveVibe] = useState<VibeEffect>('ultra_analog');
-    const [lensMM, setLensMM] = useState<LensMM>(35);
-    const [camMode, setCamMode] = useState<CamMode>('photo');
+    const [capturedMedia, setCapturedMedia] = useState<string[]>([]);
     const [isRecording, setIsRecording] = useState(false);
-    const [recordingSeconds, setRecordingSeconds] = useState(0);
-    const [capturedMedia, setCapturedMedia] = useState<{url: string, type: CamMode}[]>([]);
-    const [viewingGallery, setViewingGallery] = useState(false);
-    const [selectedItem, setSelectedItem] = useState<{url: string, type: CamMode} | null>(null);
     const [showFlashAnim, setShowFlashAnim] = useState(false);
-    const [focusPos, setFocusPos] = useState({ x: 50, y: 50, active: false });
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
-    const requestRef = useRef<number | null>(null);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const chunksRef = useRef<Blob[]>([]);
-    const timerRef = useRef<number | null>(null);
-
-    // Fator de escala da moldura: quanto maior o MM, menor o quadrado (mais "zoom" no corte)
-    const getLensFrameScale = (mm: LensMM) => {
-        switch(mm) {
-            case 24: return 0.90; // Quase tela cheia
-            case 35: return 0.75;
-            case 50: return 0.55;
-            case 85: return 0.35;
-            case 101: return 0.22; // Quadrado bem pequeno no centro
-            default: return 0.75;
-        }
-    };
-
-    const handleFocus = (e: React.MouseEvent | React.TouchEvent) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        let clientX, clientY;
-        if ('touches' in e) {
-            clientX = e.touches[0].clientX;
-            clientY = e.touches[0].clientY;
-        } else {
-            clientX = e.clientX;
-            clientY = e.clientY;
-        }
-        const x = ((clientX - rect.left) / rect.width) * 100;
-        const y = ((clientY - rect.top) / rect.height) * 100;
-        setFocusPos({ x, y, active: true });
-        
-        if (streamRef.current) {
-            const track = streamRef.current.getVideoTracks()[0];
-            const caps = track.getCapabilities() as any;
-            if (caps.focusMode) {
-                track.applyConstraints({
-                    advanced: [{ focusMode: 'manual', pointsOfInterest: [{x: clientX, y: clientY}] }] as any
-                }).catch(() => {});
-            }
-        }
-        setTimeout(() => setFocusPos(prev => ({ ...prev, active: false })), 1200);
-    };
-
-    const applyAIPipeline = (ctx: CanvasRenderingContext2D, w: number, h: number, config: EffectConfig, isFinal: boolean) => {
-        ctx.save();
-        ctx.filter = `brightness(${config.exposure}) contrast(${config.contrast}) saturate(${config.saturation}) hue-rotate(${config.temp}deg)`;
-        ctx.drawImage(ctx.canvas, 0, 0);
-
-        if (config.grain > 0) {
-            ctx.filter = 'none';
-            ctx.fillStyle = 'white';
-            ctx.globalAlpha = config.grain / 255;
-            for(let i=0; i < (isFinal ? 15000 : 1500); i++) {
-                ctx.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5);
-            }
-            ctx.globalAlpha = 1.0;
-        }
-
-        if (config.vignette > 0) {
-            const grad = ctx.createRadialGradient(w/2, h/2, w/4, w/2, h/2, w * 0.9);
-            grad.addColorStop(0, 'transparent');
-            grad.addColorStop(1, `rgba(0,0,0,${config.vignette + 0.5})`);
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, w, h);
-        }
-
-        if (isFinal) {
-            const now = new Date();
-            const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
-            ctx.font = `bold ${Math.round(h * 0.035)}px Courier, monospace`;
-            ctx.fillStyle = '#fbbf24';
-            ctx.shadowColor = 'black'; ctx.shadowBlur = 4;
-            ctx.fillText(dateStr, w * 0.08, h * 0.94);
-            ctx.font = `900 ${Math.round(h * 0.015)}px sans-serif`;
-            ctx.fillStyle = 'rgba(255,255,255,0.5)';
-            ctx.textAlign = 'right';
-            ctx.fillText("PARADISE OPTICS", w * 0.92, h * 0.94);
-        }
-        ctx.restore();
-    };
-
-    const renderLoop = useCallback(() => {
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        if (!video || !canvas || video.readyState < 2) {
-            requestRef.current = requestAnimationFrame(renderLoop);
-            return;
-        }
-
-        const ctx = canvas.getContext('2d', { alpha: false });
-        if (ctx) {
-            if (canvas.width !== video.videoWidth) canvas.width = video.videoWidth;
-            if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
-            
-            ctx.save();
-            if (facingMode === 'user') { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            ctx.restore();
-
-            applyAIPipeline(ctx, canvas.width, canvas.height, CAMERA_ENGINE_PACKS[activeVibe], false);
-        }
-        requestRef.current = requestAnimationFrame(renderLoop);
-    }, [facingMode, activeVibe]);
 
     const startCamera = useCallback(async () => {
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
@@ -180,216 +57,197 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
                 await videoRef.current.play();
-                requestRef.current = requestAnimationFrame(renderLoop);
             }
         } catch (err) { console.error(err); }
-    }, [facingMode, renderLoop]);
+    }, [facingMode]);
 
     useEffect(() => {
         if (isOpen) startCamera();
-        return () => {
-            if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-            if (requestRef.current) cancelAnimationFrame(requestRef.current);
-            if (timerRef.current) clearInterval(timerRef.current);
-        };
+        return () => streamRef.current?.getTracks().forEach(t => t.stop());
     }, [isOpen, startCamera]);
 
     const handleCapture = () => {
-        if (camMode === 'video') {
-            if (isRecording) stopRecording(); else startRecording();
-            return;
-        }
-
+        const video = videoRef.current;
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!video || !canvas) return;
 
         setShowFlashAnim(true);
-        setTimeout(() => setShowFlashAnim(false), 80);
+        setTimeout(() => setShowFlashAnim(false), 100);
 
-        // MOTOR DE RECORTE ABSOLUTO DINÂMICO:
-        // O preview está em escala 1 (estável).
-        // A moldura branca muda de tamanho conforme a lente.
-        
-        const frameScale = getLensFrameScale(lensMM);
-        
-        // A moldura visível tem frameScale * largura_da_tela.
-        // Calculamos o tamanho desse retângulo proporcionalmente no sensor original.
-        const sourceWidth = canvas.width * frameScale;
-        const sourceHeight = sourceWidth * (4/3); // Mantemos a proporção vertical da moldura
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            ctx.save();
+            if (facingMode === 'user') {
+                ctx.translate(canvas.width, 0);
+                ctx.scale(-1, 1);
+            }
+            ctx.drawImage(video, 0, 0);
+            
+            // Aplicar filtro da câmera selecionada
+            ctx.filter = selectedCamera.filter;
+            ctx.drawImage(canvas, 0, 0);
 
-        // Coordenadas centrais para o recorte cirúrgico
-        const sx = (canvas.width - sourceWidth) / 2;
-        const sy = (canvas.height - sourceHeight) / 2;
-
-        const outCanvas = document.createElement('canvas');
-        outCanvas.width = 1080; 
-        outCanvas.height = 1440; // Proporção 3:4 padrão
-        const oCtx = outCanvas.getContext('2d');
-        
-        if (oCtx) {
-            // Extrai exatamente a área delimitada pelo quadrado variável
-            oCtx.drawImage(canvas, sx, sy, sourceWidth, sourceHeight, 0, 0, 1080, 1440);
-            applyAIPipeline(oCtx, 1080, 1440, CAMERA_ENGINE_PACKS[activeVibe], true);
-            setCapturedMedia(prev => [{url: outCanvas.toDataURL('image/jpeg', 0.9), type: 'photo'}, ...prev]);
+            // Carimbo de data estilo Kapi
+            const now = new Date();
+            const dateStr = `'${now.getFullYear().toString().slice(-2)} ${ (now.getMonth() + 1).toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}`;
+            ctx.filter = 'none';
+            ctx.font = 'bold 40px Courier, monospace';
+            ctx.fillStyle = '#f59e0b';
+            ctx.shadowColor = 'black';
+            ctx.shadowBlur = 5;
+            ctx.fillText(dateStr, canvas.width * 0.75, canvas.height * 0.92);
+            
+            ctx.restore();
+            
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+            setCapturedMedia(prev => [dataUrl, ...prev]);
         }
-    };
-
-    const startRecording = () => {
-        if (!streamRef.current) return;
-        chunksRef.current = [];
-        const recorder = new MediaRecorder(streamRef.current, { mimeType: 'video/webm;codecs=vp9' });
-        mediaRecorderRef.current = recorder;
-        recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
-        recorder.onstop = () => {
-            const blob = new Blob(chunksRef.current, { type: 'video/mp4' });
-            setCapturedMedia(prev => [{url: URL.createObjectURL(blob), type: 'video'}, ...prev]);
-        };
-        recorder.start();
-        setIsRecording(true);
-        setRecordingSeconds(0);
-        timerRef.current = window.setInterval(() => setRecordingSeconds(s => s + 1), 1000);
-    };
-
-    const stopRecording = () => {
-        mediaRecorderRef.current?.stop();
-        setIsRecording(false);
-        if (timerRef.current) clearInterval(timerRef.current);
     };
 
     if (!isOpen) return null;
-
-    const currentFrameScale = getLensFrameScale(lensMM);
 
     return (
         <div className="fixed inset-0 bg-black z-[600] flex flex-col overflow-hidden text-white font-sans touch-none select-none">
             {showFlashAnim && <div className="fixed inset-0 z-[1000] bg-white"></div>}
 
-            <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-50">
-                <button onClick={onClose} className="w-10 h-10 bg-black/40 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/10 text-xl shadow-2xl active:scale-90">&times;</button>
-                <div className="flex gap-4 bg-black/40 backdrop-blur-xl px-5 py-2 rounded-full border border-white/10 shadow-2xl">
-                    {([24, 35, 50, 85, 101] as LensMM[]).map(mm => (
-                        <button key={mm} onClick={() => setLensMM(mm)} className={`text-[11px] font-black transition-all ${lensMM === mm ? 'text-sky-400 scale-110' : 'text-white/40'}`}>{mm}mm</button>
-                    ))}
-                </div>
-                <button onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')} className="w-10 h-10 bg-black/40 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/10">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                </button>
-            </header>
-
-            <div className="flex-grow relative bg-zinc-950 flex items-center justify-center overflow-hidden" onMouseDown={handleFocus} onTouchStart={handleFocus}>
-                <video ref={videoRef} className="hidden" playsInline muted />
-                
-                {/* PREVIEW ESTÁVEL (SEM ZOOM VISUAL) */}
-                <div className="w-full h-full flex items-center justify-center">
-                    <canvas ref={canvasRef} className="w-full h-full object-cover" />
-                </div>
-
-                {/* Retícula de Foco */}
-                {focusPos.active && (
-                    <div 
-                        className="absolute w-16 h-16 border-2 border-sky-400 rounded-lg animate-focus-pulse pointer-events-none z-40"
-                        style={{ left: `${focusPos.x}%`, top: `${focusPos.y}%`, transform: 'translate(-50%, -50%)' }}
-                    >
-                        <div className="absolute inset-0 border border-sky-400/20 scale-150 rounded-lg"></div>
-                    </div>
-                )}
-
-                {/* MOLDURA DE RECORTE DINÂMICA: O tamanho muda com o MM */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-                    <div 
-                        className="border-4 border-white rounded-[3rem] shadow-[0_0_0_4000px_rgba(0,0,0,0.85)] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)"
-                        style={{ width: `${currentFrameScale * 100}%`, aspectRatio: '3/4' }}
-                    >
-                         <div className="absolute bottom-6 left-6 opacity-60 flex flex-col gap-0.5">
-                            <span className="text-[10px] font-black tracking-widest">{lensMM}MM ACTIVE FRAME</span>
-                            <span className="text-[8px] font-bold uppercase tracking-tighter text-sky-400">Paradise Crop v3.0</span>
+            {/* Viewfinder Container */}
+            <div className="flex-grow relative flex items-center justify-center bg-[#050505] pt-4 px-4 pb-2">
+                <div className={`relative overflow-hidden rounded-[2.5rem] bg-zinc-900 border border-white/5 transition-all duration-300 shadow-2xl ${
+                    aspectRatio === '3:4' ? 'aspect-[3/4] w-full' : 
+                    aspectRatio === '1:1' ? 'aspect-square w-full' : 'w-full h-full'
+                }`}>
+                    <video 
+                        ref={videoRef} 
+                        autoPlay 
+                        playsInline 
+                        muted 
+                        className="w-full h-full object-cover"
+                        style={{ filter: selectedCamera.filter, transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' }}
+                    />
+                    
+                    {/* UI do Viewfinder (Kapi Style) */}
+                    <div className="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between">
+                         <div className="flex justify-between items-start opacity-60">
+                             <div className="text-[10px] font-mono">ISO 400<br/>F 2.8</div>
+                             <div className="text-[10px] font-mono text-right">RAW<br/>4K 60FPS</div>
+                         </div>
+                         
+                         {/* Zoom Selector */}
+                         <div className="flex flex-col items-center gap-1 mb-8">
+                             <div className="flex gap-4 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 pointer-events-auto">
+                                 {['.5', '1x', '2x', '3x'].map(z => (
+                                     <button key={z} className={`text-[10px] font-black w-7 h-7 rounded-full transition-all ${z === '1x' ? 'bg-zinc-800 text-white' : 'text-white/40'}`}>{z}</button>
+                                 ))}
+                             </div>
                          </div>
                     </div>
                 </div>
             </div>
 
-            <footer className="bg-black px-4 pb-14 pt-6 border-t border-white/5 z-50">
-                <div className="flex flex-col gap-6">
-                    <div className="flex justify-center gap-10 mb-2">
-                        <button onClick={() => setCamMode('photo')} className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'photo' ? 'text-white' : 'text-zinc-600'}`}>Foto</button>
-                        <button onClick={() => setCamMode('video')} className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all ${camMode === 'video' ? 'text-red-500' : 'text-zinc-600'}`}>Vídeo</button>
-                    </div>
+            {/* Toolbar Superior (Ícones Kapi) */}
+            <div className="flex justify-around items-center px-6 py-4 bg-black">
+                <button onClick={() => setFlash(!flash)} className={`p-2 transition-colors ${flash ? 'text-yellow-400' : 'text-white/80'}`}>
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                </button>
+                <button onClick={() => setTimer(!timer)} className={`p-2 transition-colors ${timer ? 'text-sky-400' : 'text-white/80'}`}>
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </button>
+                <button onClick={() => setAspectRatio(prev => prev === '3:4' ? '1:1' : '3:4')} className="bg-white/10 px-3 py-1 rounded-lg text-[10px] font-black border border-white/10">
+                    {aspectRatio}
+                </button>
+                <button className="text-white/80 p-2">
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707" /></svg>
+                </button>
+                <button className="text-white/80 p-2">
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" /></svg>
+                </button>
+            </div>
 
-                    <div className="flex gap-4 overflow-x-auto no-scrollbar py-2 px-2 items-center justify-center">
-                        {Object.values(CAMERA_ENGINE_PACKS).map(eff => (
-                            <button key={eff.id} onClick={() => setActiveVibe(eff.id)} className={`flex flex-col items-center shrink-0 transition-all ${activeVibe === eff.id ? 'scale-110 opacity-100' : 'opacity-30'}`}>
-                                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-xl border ${activeVibe === eff.id ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-zinc-900 border-white/10 text-zinc-500'}`}>{eff.label}</div>
-                                <span className="text-[8px] font-black uppercase mt-2 tracking-widest">{eff.name.split(' ')[0]}</span>
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="flex items-center justify-between px-10">
-                        <button onClick={() => setViewingGallery(true)} className="w-14 h-14 rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden shadow-lg active:scale-95 transition-all">
-                            {capturedMedia.length > 0 && (
-                                capturedMedia[0].type === 'video' 
-                                ? <video src={capturedMedia[0].url} className="w-full h-full object-cover" /> 
-                                : <img src={capturedMedia[0].url} className="w-full h-full object-cover" />
-                            )}
-                        </button>
+            {/* Camera Model Carousel (Kapicam Core) */}
+            <div className="bg-[#111] py-6 border-t border-white/5">
+                <div className="flex gap-6 overflow-x-auto px-10 no-scrollbar items-center">
+                    {CAMERA_MODELS.map((cam) => (
                         <button 
-                            onClick={handleCapture} 
-                            className={`w-20 h-20 rounded-full border-4 p-1 active:scale-90 transition-all shadow-[0_0_50px_rgba(255,255,255,0.1)] ${isRecording ? 'border-red-500' : 'border-white/30'}`}
+                            key={cam.id} 
+                            onClick={() => setSelectedCamera(cam)}
+                            className={`flex flex-col items-center shrink-0 gap-3 transition-all ${selectedCamera.id === cam.id ? 'scale-110 opacity-100' : 'opacity-40'}`}
                         >
-                            <div className={`w-full h-full rounded-full transition-all duration-300 ${isRecording ? 'bg-red-500 scale-75 rounded-xl' : 'bg-white'}`}></div>
+                            <div className="relative">
+                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-xl bg-gradient-to-br from-zinc-800 to-zinc-900 border-2 ${selectedCamera.id === cam.id ? 'border-sky-500' : 'border-white/10'}`}>
+                                    {cam.icon}
+                                </div>
+                                {cam.isPremium && (
+                                    <div className="absolute -top-1.5 -right-1.5 text-[8px] bg-amber-400 text-black px-1 rounded font-black">PRO</div>
+                                )}
+                            </div>
+                            <span className={`text-[9px] font-black uppercase tracking-widest ${selectedCamera.id === cam.id ? 'text-sky-500' : 'text-zinc-500'}`}>{cam.name}</span>
                         </button>
-                        <div className="w-14"></div>
-                    </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Bottom Navigation & Controls */}
+            <footer className="bg-black pt-4 pb-12 px-8">
+                {/* Modos: Vídeo, Foto, Live */}
+                <div className="flex justify-center gap-8 mb-8">
+                    {(['Vídeo', 'Foto', 'Live'] as CamMode[]).map(m => (
+                        <button 
+                            key={m} 
+                            onClick={() => setActiveMode(m)}
+                            className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all ${activeMode === m ? 'text-white' : 'text-zinc-600'}`}
+                        >
+                            {m}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Main Capture Buttons */}
+                <div className="flex items-center justify-between">
+                    <button className="w-14 h-14 rounded-2xl bg-zinc-900/50 border border-white/10 overflow-hidden shadow-lg active:scale-95 transition-all">
+                        {capturedMedia.length > 0 && <img src={capturedMedia[0]} className="w-full h-full object-cover" />}
+                    </button>
+                    
+                    <button 
+                        onClick={handleCapture}
+                        className="w-24 h-24 rounded-full border-4 border-white/20 p-2 flex items-center justify-center active:scale-90 transition-all shadow-[0_0_50px_rgba(255,255,255,0.05)]"
+                    >
+                        <div className="w-full h-full rounded-full bg-white shadow-inner flex items-center justify-center">
+                            <div className="w-16 h-16 rounded-full border-2 border-black/5"></div>
+                        </div>
+                    </button>
+
+                    <button 
+                        onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')}
+                        className="w-14 h-14 rounded-full bg-zinc-900/50 border border-white/10 flex items-center justify-center active:scale-95 transition-all"
+                    >
+                        <svg className="w-6 h-6 text-white/80" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    </button>
                 </div>
             </footer>
 
-            {viewingGallery && (
-                <div className="fixed inset-0 z-[700] bg-black flex flex-col animate-fade-in">
-                    <header className="p-6 flex justify-between items-center border-b border-white/10 bg-black/95">
-                        <button onClick={() => setViewingGallery(false)} className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Sair</button>
-                        <h3 className="font-black uppercase tracking-[0.3em] text-xs text-zinc-300">Film Roll</h3>
-                        <div className="w-10"></div>
-                    </header>
-                    <div className="flex-grow overflow-y-auto grid grid-cols-3 gap-0.5 p-0.5">
-                        {capturedMedia.map((item, i) => (
-                            <div key={i} className="aspect-[3/4] cursor-pointer active:opacity-70 relative" onClick={() => setSelectedItem(item)}>
-                                {item.type === 'video' 
-                                ? <video src={item.url} className="w-full h-full object-cover" /> 
-                                : <img src={item.url} className="w-full h-full object-cover" />}
-                            </div>
-                        ))}
+            {/* Banner Kapi Cam Pro Style */}
+            <div className="bg-gradient-to-r from-amber-500/20 to-orange-600/20 p-4 border-t border-white/10 flex items-center justify-between px-8 backdrop-blur-md">
+                <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-amber-400 rounded-lg flex items-center justify-center shadow-lg">
+                        <svg className="w-5 h-5 text-black" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-black uppercase text-amber-400">Obtenha acesso ilimitado ao Pro</p>
+                        <p className="text-[8px] text-white/40 font-bold">R$ 12,99/mês. Cancele a qualquer momento.</p>
                     </div>
                 </div>
-            )}
+                <svg className="w-4 h-4 text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 5l7 7-7 7" strokeWidth={2.5}/></svg>
+            </div>
 
-            {selectedItem && (
-                <div className="fixed inset-0 z-[800] bg-black flex flex-col animate-fade-in p-6 items-center justify-center">
-                    <div className="absolute top-10 left-10 z-10">
-                        <button onClick={() => setSelectedItem(null)} className="p-3 bg-white/10 backdrop-blur-xl rounded-full border border-white/10">
-                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M15 19l-7-7 7-7" /></svg>
-                        </button>
-                    </div>
-                    <div className="w-full max-w-sm aspect-[3/4] rounded-[3rem] overflow-hidden shadow-2xl bg-zinc-900 border border-white/10">
-                        {selectedItem.type === 'video' 
-                        ? <video src={selectedItem.url} className="w-full h-full object-cover" controls autoPlay loop /> 
-                        : <img src={selectedItem.url} className="w-full h-full object-cover" />}
-                    </div>
-                    <div className="mt-14 flex gap-5 w-full max-w-sm">
-                        <button onClick={() => { setCapturedMedia(prev => prev.filter(i => i.url !== selectedItem.url)); setSelectedItem(null); }} className="flex-1 py-5 rounded-[1.5rem] bg-zinc-900 text-red-500 font-black uppercase text-[11px] tracking-widest border border-red-500/20 active:scale-95 transition-all">Apagar</button>
-                        <button onClick={() => { const a = document.createElement('a'); a.href = selectedItem.url; a.download = `Paradise_${Date.now()}`; a.click(); }} className="flex-1 py-5 rounded-[1.5rem] bg-white text-black font-black uppercase text-[11px] tracking-widest shadow-2xl active:scale-95 transition-all">Salvar</button>
-                    </div>
-                </div>
-            )}
+            <canvas ref={canvasRef} className="hidden" />
 
             <style>{`
-                @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-                @keyframes focus-pulse { 
-                    0% { transform: translate(-50%, -50%) scale(1.4); opacity: 1; } 
-                    100% { transform: translate(-50%, -50%) scale(1); opacity: 0.2; } 
-                }
-                .animate-fade-in { animation: fade-in 0.3s ease-out; }
-                .animate-focus-pulse { animation: focus-pulse 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
                 .no-scrollbar::-webkit-scrollbar { display: none; }
+                .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
             `}</style>
         </div>
     );

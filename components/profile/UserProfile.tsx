@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { auth, db, doc, getDoc, collection, getDocs, deleteDoc, serverTimestamp, updateDoc, onSnapshot, query, where, writeBatch, addDoc, storage, storageRef, uploadBytes, getDownloadURL } from '../../firebase';
 import { signOut, updateProfile } from 'firebase/auth';
@@ -255,6 +256,63 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
         }
     };
 
+    const handleAdminGlobalMessage = async () => {
+        if (!isAdmin || isAdminActionLoading) return;
+        const message = window.prompt("Digite a mensagem que deseja enviar para TODOS os usuários da rede:");
+        if (!message || !message.trim()) return;
+
+        if (!window.confirm("Isso enviará uma mensagem privada para cada usuário cadastrado. Tem certeza?")) return;
+
+        setIsAdminActionLoading(true);
+        try {
+            const usersSnap = await getDocs(collection(db, 'users'));
+            const total = usersSnap.size;
+            let count = 0;
+
+            // Processar em lotes para evitar timeout do navegador
+            for (const userDoc of usersSnap.docs) {
+                const targetUserId = userDoc.id;
+                if (targetUserId === currentUser?.uid) continue;
+
+                const targetData = userDoc.data();
+                const conversationId = [currentUser!.uid, targetUserId].sort().join('_');
+                const conversationRef = doc(db, 'conversations', conversationId);
+
+                const batch = writeBatch(db);
+
+                // Garante que a conversa existe
+                batch.set(conversationRef, {
+                    participants: [currentUser!.uid, targetUserId],
+                    participantInfo: {
+                        [currentUser!.uid]: { username: currentUser!.displayName, avatar: currentUser!.photoURL },
+                        [targetUserId]: { username: targetData.username, avatar: targetData.avatar }
+                    },
+                    lastMessage: { text: message, senderId: currentUser!.uid, timestamp: serverTimestamp() },
+                    timestamp: serverTimestamp()
+                }, { merge: true });
+
+                // Adiciona a mensagem
+                const msgRef = doc(collection(db, 'conversations', conversationId, 'messages'));
+                batch.set(msgRef, {
+                    senderId: currentUser!.uid,
+                    text: message,
+                    timestamp: serverTimestamp(),
+                    mediaType: 'text'
+                });
+
+                await batch.commit();
+                count++;
+            }
+            alert(`Mensagem enviada com sucesso para ${count} usuários.`);
+            setIsOptionsMenuOpen(false);
+        } catch (e) {
+            console.error(e);
+            alert("Erro ao enviar mensagens globais.");
+        } finally {
+            setIsAdminActionLoading(false);
+        }
+    };
+
     const handleReportProfile = async () => {
         if (!currentUser) return;
         const reason = window.prompt("Por que você está denunciando este perfil? (Conteúdo inapropriado, Spam, etc.)");
@@ -330,6 +388,14 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                                                         >
                                                             <VerifiedBadge className="w-4 h-4" />
                                                             {user?.isVerified ? "Remover Verificado" : "Dar Verificado"}
+                                                        </button>
+                                                        <button 
+                                                            onClick={handleAdminGlobalMessage} 
+                                                            disabled={isAdminActionLoading}
+                                                            className="w-full text-left px-4 py-3 text-sm text-sky-600 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-3 border-t dark:border-zinc-800"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" /></svg>
+                                                            Enviar Mensagem Global
                                                         </button>
                                                         <button 
                                                             onClick={() => setIsAdminDashboardOpen(true)} 
