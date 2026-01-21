@@ -67,6 +67,26 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
         } catch (err) { console.error("Erro ao iniciar câmera:", err); }
     }, [facingMode]);
 
+    // ZOOM REAL DO HARDWARE
+    useEffect(() => {
+        const applyNativeZoom = async () => {
+            if (!streamRef.current) return;
+            const track = streamRef.current.getVideoTracks()[0];
+            const capabilities = track.getCapabilities() as any;
+            
+            if (capabilities.zoom) {
+                try {
+                    await track.applyConstraints({
+                        advanced: [{ zoom: zoom }] as any
+                    });
+                } catch (e) {
+                    console.warn("Zoom nativo falhou, usando fallback CSS");
+                }
+            }
+        };
+        applyNativeZoom();
+    }, [zoom]);
+
     useEffect(() => {
         if (isOpen && !showGallery) startCamera();
         return () => streamRef.current?.getTracks().forEach(t => t.stop());
@@ -97,12 +117,18 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
         const track = streamRef.current.getVideoTracks()[0];
         const capabilities = track.getCapabilities() as any;
-        if (capabilities.focusMode && capabilities.focusMode.includes('manual')) {
+        
+        // Foco Manual Real
+        if (capabilities.focusMode) {
             try {
-                await track.applyConstraints({
-                    advanced: [{ focusMode: 'manual', pointsOfInterest: [{ x, y }] }] as any
-                });
-            } catch (e) { console.log("Foco manual não disponível"); }
+                const constraints: any = {
+                    advanced: [{ 
+                        focusMode: capabilities.focusMode.includes('manual') ? 'manual' : 'continuous',
+                        pointsOfInterest: [{ x, y }] 
+                    }]
+                };
+                await track.applyConstraints(constraints);
+            } catch (e) { console.log("Foco nativo não disponível"); }
         }
     };
 
@@ -136,11 +162,15 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.fillRect(0, 0, width, height);
         }
 
-        // 3. Marca d'água NÉOS
-        ctx.font = `black ${Math.floor(width * 0.04)}px sans-serif`;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        // 3. Marca d'água NÉOS (Canto Inferior Direito)
+        ctx.save();
+        ctx.font = `bold ${Math.floor(width * 0.05)}px sans-serif`;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
         ctx.textAlign = 'right';
-        ctx.fillText("NÉOS", width * 0.95, height * 0.08);
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 10;
+        ctx.fillText("NÉOS", width * 0.95, height * 0.94);
+        ctx.restore();
 
         // 4. Data Vertical GRF Amarela (Lado Esquerdo, em pé)
         const now = new Date();
@@ -174,15 +204,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.save();
             if (facingMode === 'user') { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
 
-            if (zoom > 1) {
-                const zW = canvas.width / zoom;
-                const zH = canvas.height / zoom;
-                const sx = (canvas.width - zW) / 2;
-                const sy = (canvas.height - zH) / 2;
-                ctx.drawImage(video, sx, sy, zW, zH, 0, 0, canvas.width, canvas.height);
-            } else {
-                ctx.drawImage(video, 0, 0);
-            }
+            // Nota: Zoom agora é via Hardware, então desenhamos o vídeo direto
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             
             ctx.restore();
             ctx.filter = 'none';
@@ -266,7 +289,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                         className="w-full h-full object-cover transition-transform duration-300"
                         style={{ 
                             filter: activePreset.filterCSS, 
-                            transform: `${facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)'} scale(${zoom})`,
+                            transform: `${facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)'}`,
                             imageRendering: 'optimizeQuality'
                         }}
                     />
@@ -280,8 +303,8 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
                     <div className="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between">
                          <div className="flex justify-between items-start opacity-60">
-                             <div className="text-[10px] font-mono leading-tight uppercase">{activePreset.name}<br/>4K_HD_RAW<br/>Grain_{activePreset.grain * 100}%</div>
-                             <div className="text-[10px] font-mono text-right leading-tight uppercase">ISO_Auto<br/>HDR_OFF<br/>60FPS</div>
+                             <div className="text-[10px] font-mono leading-tight uppercase">{activePreset.name}<br/>Optical_Zoom<br/>Grain_{activePreset.grain * 100}%</div>
+                             <div className="text-[10px] font-mono text-right leading-tight uppercase">ISO_Auto<br/>AF-C_Active<br/>60FPS</div>
                          </div>
                          {countdown && <div className="absolute inset-0 flex items-center justify-center"><span className="text-9xl font-black italic text-[#FFC83D] animate-bounce">{countdown}</span></div>}
                          <div className="flex flex-col items-center gap-1 mb-8">
