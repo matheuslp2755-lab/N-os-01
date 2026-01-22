@@ -18,7 +18,7 @@ import WeatherBanner from './feed/WeatherBanner';
 import ParadiseCameraModal from './feed/ParadiseCameraModal';
 import VibeBeamModal from './feed/VibeBeamModal';
 import ForwardModal from './messages/ForwardModal';
-import { auth, db, collection, query, where, onSnapshot, orderBy, doc, getDoc, limit, deleteDoc, updateDoc, serverTimestamp } from '../firebase';
+import { auth, db, collection, query, onSnapshot, orderBy, doc, getDoc, limit, deleteDoc } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 
 const Feed: React.FC = () => {
@@ -28,18 +28,6 @@ const Feed: React.FC = () => {
   const [posts, setPosts] = useState<any[]>([]);
   const [usersWithPulses, setUsersWithPulses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  const [sysConfig, setSysConfig] = useState<any>({
-      appName: 'Néos',
-      enableVibes: true,
-      enablePulses: true,
-      enableBeam: true,
-      enableParadise: true,
-      maintenanceMode: false
-  });
-  
-  const [globalAlert, setGlobalAlert] = useState<{message: string, id: string} | null>(null);
-  const [alertProgress, setAlertProgress] = useState(100);
   
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
@@ -59,169 +47,72 @@ const Feed: React.FC = () => {
 
   const currentUser = auth.currentUser;
 
-  // Listener Configuração do Sistema (Néos Creator)
-  useEffect(() => {
-    return onSnapshot(doc(db, 'system', 'config'), (snap) => {
-        if (snap.exists()) setSysConfig(snap.data());
-    });
-  }, []);
-
-  // Listener Alerta Global
-  useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'system', 'global_alert'), (snap) => {
-        const data = snap.data();
-        if (data && data.message) {
-            setGlobalAlert({ message: data.message, id: data.id || '1' });
-            setAlertProgress(100);
-        }
-    });
-    return () => unsub();
-  }, []);
-
-  // Timer Alerta
-  useEffect(() => {
-    if (globalAlert) {
-        const duration = 15000;
-        const interval = 100;
-        const step = (interval / duration) * 100;
-        const timer = setInterval(() => {
-            setAlertProgress(prev => {
-                if (prev <= 0) { clearInterval(timer); setGlobalAlert(null); return 0; }
-                return prev - step;
-            });
-        }, interval);
-        return () => clearInterval(timer);
-    }
-  }, [globalAlert]);
-
-  // Listener Posts
   useEffect(() => {
     if (viewMode === 'feed' && !viewingProfileId) {
       setLoading(true);
       const q = query(collection(db, 'posts'), orderBy('timestamp', 'desc'), limit(50));
-      const unsubscribe = onSnapshot(q, (snap) => {
+      return onSnapshot(q, (snap) => {
         setPosts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         setLoading(false);
       });
-      return () => unsubscribe();
     }
   }, [viewMode, viewingProfileId]);
 
-  // Listener Pulses
   useEffect(() => {
-    if (!currentUser || !sysConfig.enablePulses) return;
     const q = query(collection(db, 'pulses'), orderBy('createdAt', 'desc'), limit(100));
-    
-    const unsubscribe = onSnapshot(q, async (snap) => {
+    return onSnapshot(q, async (snap) => {
         const pulsesMap = new Map<string, any[]>();
-        const authorIds = new Set<string>();
-
         snap.docs.forEach(d => {
             const data = d.data();
-            if (!data.authorId) return;
-            authorIds.add(data.authorId);
-            if (!pulsesMap.has(data.authorId)) pulsesMap.set(data.authorId, []);
-            pulsesMap.get(data.authorId)?.push({ id: d.id, ...data });
+            if (data.authorId) {
+                if (!pulsesMap.has(data.authorId)) pulsesMap.set(data.authorId, []);
+                pulsesMap.get(data.authorId)?.push({ id: d.id, ...data });
+            }
         });
-
         const groupedArray: any[] = [];
-        const authorsToFetch = Array.from(authorIds);
-        
-        for (const authorId of authorsToFetch) {
-            try {
-                const userSnap = await getDoc(doc(db, 'users', authorId));
-                if (userSnap.exists()) {
-                    groupedArray.push({
-                        author: { id: authorId, ...userSnap.data() },
-                        pulses: pulsesMap.get(authorId)
-                    });
-                }
-            } catch (e) { console.error("Erro autor pulse:", e); }
+        for (const [authorId, pulses] of pulsesMap.entries()) {
+            const userSnap = await getDoc(doc(db, 'users', authorId));
+            if (userSnap.exists()) {
+                groupedArray.push({ author: { id: authorId, ...userSnap.data() }, pulses });
+            }
         }
         setUsersWithPulses(groupedArray);
     });
-
-    return () => unsubscribe();
-  }, [currentUser, sysConfig.enablePulses]);
+  }, []);
 
   const handleSelectUser = (id: string) => {
     setViewingProfileId(id);
     setViewMode('profile');
   };
 
-  if (sysConfig.maintenanceMode && currentUser?.email !== 'Matheuslp2755@gmail.com') {
-      return (
-          <div className="h-screen bg-black flex flex-col items-center justify-center p-10 text-center">
-              <h1 className="text-4xl font-black italic text-sky-500 mb-4">{sysConfig.appName}</h1>
-              <p className="text-zinc-500 font-bold uppercase tracking-widest text-xs">Em Manutenção Técnica</p>
-              <p className="text-zinc-700 text-sm mt-8">O dono está ajustando novas funções. Voltamos em breve.</p>
-          </div>
-      );
-  }
-
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      {globalAlert && (
-          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[1000] w-[95%] max-w-lg animate-slide-down">
-              <div className="bg-indigo-600 text-white p-5 rounded-[2rem] shadow-2xl relative overflow-hidden ring-4 ring-indigo-500/20">
-                  <div className="flex items-center gap-4 relative z-10">
-                      <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
-                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
-                      </div>
-                      <div className="flex-grow">
-                          <h4 className="font-black text-[10px] uppercase tracking-widest mb-0.5 opacity-70">Aviso da {sysConfig.appName}</h4>
-                          <p className="text-sm font-bold leading-tight">{globalAlert.message}</p>
-                      </div>
-                      <button onClick={() => setGlobalAlert(null)} className="p-2 -mr-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M6 18L18 6M6 6l12 12" /></svg>
-                      </button>
-                  </div>
-                  <div className="absolute bottom-0 left-0 h-1 bg-white/30 transition-all duration-100 ease-linear" style={{ width: `${alertProgress}%` }}></div>
-              </div>
-          </div>
-      )}
-
       <div className="hidden lg:flex flex-col fixed left-0 top-0 h-screen w-64 border-r dark:border-zinc-800 bg-white dark:bg-black p-6 z-40">
-        <div className="mb-10 pt-6">
-            <h1 onClick={() => { setViewMode('feed'); setViewingProfileId(null); }} className="text-6xl font-black italic cursor-pointer bg-gradient-to-br from-indigo-400 via-purple-500 to-pink-500 text-transparent bg-clip-text tracking-tighter">{sysConfig.appName}</h1>
-        </div>
+        <h1 onClick={() => { setViewMode('feed'); setViewingProfileId(null); }} className="text-5xl font-black italic cursor-pointer mb-12">Néos</h1>
         <nav className="flex flex-col gap-4">
-            <button onClick={() => { setViewMode('feed'); setViewingProfileId(null); }} className={`flex items-center gap-4 p-3 rounded-2xl ${viewMode === 'feed' && !viewingProfileId ? 'font-bold bg-zinc-50 dark:bg-zinc-900' : ''}`}>
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M3 12l2-2m0 0l7-7 7-7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-                <span>{t('header.home')}</span>
-            </button>
-            {sysConfig.enableParadise && (
-                <button onClick={() => setIsParadiseOpen(true)} className="flex items-center gap-4 p-3 rounded-2xl text-sky-500 font-bold hover:bg-sky-50 dark:hover:bg-sky-950/20 transition-all">
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812-1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /></svg>
-                    <span>Câmera do Paraíso</span>
-                </button>
-            )}
+            <button onClick={() => { setViewMode('feed'); setViewingProfileId(null); }} className={`p-3 rounded-2xl text-left font-bold ${viewMode === 'feed' && !viewingProfileId ? 'bg-zinc-100 dark:bg-zinc-900' : ''}`}>Início</button>
+            <button onClick={() => setIsParadiseOpen(true)} className="p-3 rounded-2xl text-left font-bold text-sky-500">Câmera Paradise</button>
         </nav>
       </div>
-      
-      <div className={`${viewMode === 'vibes' ? 'hidden' : 'block'} lg:hidden`}>
-        <Header onSelectUser={handleSelectUser} onGoHome={() => { setViewMode('feed'); setViewingProfileId(null); }} onOpenMessages={() => setIsMessagesOpen(true)} onOpenBrowser={() => setIsBrowserOpen(true)} />
-      </div>
 
-      <main className={`transition-all duration-300 ${viewMode === 'vibes' ? 'lg:pl-64 h-[calc(100dvh-4rem)] lg:h-auto' : 'lg:pl-64 lg:pr-4 pt-16 lg:pt-8'}`}>
+      <Header onSelectUser={handleSelectUser} onGoHome={() => { setViewMode('feed'); setViewingProfileId(null); }} onOpenMessages={() => setIsMessagesOpen(true)} onOpenBrowser={() => setIsBrowserOpen(true)} />
+
+      <main className={`lg:pl-64 pt-16 ${viewMode === 'vibes' ? 'h-screen' : ''}`}>
         {viewMode === 'vibes' ? <VibeFeed /> : 
          viewMode === 'profile' || viewingProfileId ? (
-           <div className="container mx-auto max-w-4xl py-4"><UserProfile userId={viewingProfileId || currentUser?.uid || ''} onStartMessage={(u) => { setTargetUserForMessages(u); setIsMessagesOpen(true); }} onSelectUser={handleSelectUser} /></div>
+           <UserProfile userId={viewingProfileId || currentUser?.uid || ''} onStartMessage={(u) => { setTargetUserForMessages(u); setIsMessagesOpen(true); }} />
          ) : (
-          <div className="container mx-auto max-w-lg py-4 pb-24 px-4">
-            {sysConfig.enablePulses && (
-                <PulseBar usersWithPulses={usersWithPulses} onViewPulses={authorId => {
-                    const group = usersWithPulses.find(g => g?.author?.id === authorId);
-                    if (group) setViewingPulseGroup(group);
-                }} />
-            )}
+          <div className="container mx-auto max-w-lg py-8 px-4 pb-24">
+            <PulseBar usersWithPulses={usersWithPulses} onViewPulses={id => {
+                const group = usersWithPulses.find(g => g.author.id === id);
+                if (group) setViewingPulseGroup(group);
+            }} />
             <WeatherBanner />
-            {loading && <div className="flex justify-center py-10"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-sky-500"></div></div>}
-            <div className="flex flex-col gap-4 mt-4">
-                {posts.map(p => (
-                    <Post key={p.id} post={p} onPostDeleted={(id) => deleteDoc(doc(db, 'posts', id))} />
-                ))}
-            </div>
+            {loading ? <div className="py-20 text-center">Carregando...</div> : (
+                <div className="flex flex-col gap-6">
+                    {posts.map(p => <Post key={p.id} post={p} onPostDeleted={(id) => deleteDoc(doc(db, 'posts', id))} />)}
+                </div>
+            )}
           </div>
         )}
       </main>
@@ -231,31 +122,13 @@ const Feed: React.FC = () => {
       <CreateMenuModal isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onSelect={(type) => {
           if (type === 'post') setIsGalleryOpen(true);
           if (type === 'pulse') setIsCreatePulseOpen(true);
-          if (type === 'vibe') setIsCreateVibeOpen(true);
           if (type === 'paradise') setIsParadiseOpen(true);
-          if (type === 'beam') setIsBeamOpen(true);
       }} />
-      <MessagesModal isOpen={isMessagesOpen} onClose={() => setIsMessagesOpen(false)} initialTargetUser={targetUserForMessages} initialConversationId={null} />
-      {viewingPulseGroup && (
-          <PulseViewerModal 
-            isOpen={!!viewingPulseGroup} 
-            pulses={viewingPulseGroup.pulses} 
-            authorInfo={viewingPulseGroup.author} 
-            initialPulseIndex={0} 
-            onClose={() => setViewingPulseGroup(null)} 
-            onDelete={() => {}} 
-            onViewProfile={handleSelectUser}
-          />
-      )}
-      
+      <ParadiseCameraModal isOpen={isParadiseOpen} onClose={() => setIsParadiseOpen(false)} />
+      <CreatePulseModal isOpen={isCreatePulseOpen} onClose={() => setIsCreatePulseOpen(false)} onPulseCreated={() => {}} />
       <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={(imgs) => { setSelectedMedia(imgs); setIsGalleryOpen(false); setIsCreatePostOpen(true); }} />
       <CreatePostModal isOpen={isCreatePostOpen} onClose={() => setIsCreatePostOpen(false)} onPostCreated={() => setIsCreatePostOpen(false)} initialImages={selectedMedia} />
-      <CreatePulseModal isOpen={isCreatePulseOpen} onClose={() => setIsCreatePulseOpen(false)} onPulseCreated={() => setIsCreatePulseOpen(false)} />
-      <CreateVibeModal isOpen={isCreateVibeOpen} onClose={() => setIsCreateVibeOpen(false)} onVibeCreated={() => setIsCreateVibeOpen(false)} />
-      {isBrowserOpen && <VibeBrowser onClose={() => setIsBrowserOpen(false)} />}
-      <ParadiseCameraModal isOpen={isParadiseOpen} onClose={() => setIsParadiseOpen(false)} />
-      <VibeBeamModal isOpen={isBeamOpen} onClose={() => setIsBeamOpen(false)} />
-      <ForwardModal isOpen={isForwardOpen} onClose={() => setIsForwardOpen(false)} post={selectedPostToForward} />
+      <PulseViewerModal isOpen={!!viewingPulseGroup} pulses={viewingPulseGroup?.pulses || []} authorInfo={viewingPulseGroup?.author} initialPulseIndex={0} onClose={() => setViewingPulseGroup(null)} onDelete={() => {}} onViewProfile={handleSelectUser} />
     </div>
   );
 };
