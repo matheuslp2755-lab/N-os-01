@@ -216,7 +216,64 @@ const Header: React.FC<HeaderProps> = ({ onSelectUser, onGoHome, onOpenMessages,
                     <button onClick={() => onOpenMessages()} className="hover:scale-110 transition-transform"><svg className="w-7 h-7 text-zinc-800 dark:text-zinc-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M22 2L11 13M22 2L15 22L11 13M11 13L2 9L22 2Z"/></svg></button>
                 </nav>
             </div>
-            {/* Search Overlay remains same */}
+
+            {/* Search Overlay */}
+            {isSearchOverlayOpen && (
+                <div className="fixed inset-0 bg-white dark:bg-black z-[100] flex flex-col animate-fade-in">
+                    <header className="flex items-center gap-4 p-4 border-b dark:border-zinc-800">
+                        <button onClick={closeSearch} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M15 19l-7-7 7-7"/></svg>
+                        </button>
+                        <div className="flex-grow bg-zinc-100 dark:bg-zinc-900 rounded-2xl flex items-center px-4 py-2 border dark:border-zinc-800 focus-within:ring-2 ring-indigo-500/20 transition-all">
+                            <svg className="w-4 h-4 text-zinc-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            <input 
+                                autoFocus
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Pesquisar usuários..."
+                                className="w-full bg-transparent outline-none text-sm font-bold placeholder:text-zinc-500"
+                            />
+                            {searchQuery && (
+                                <button onClick={() => setSearchQuery('')} className="text-zinc-400">
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/></svg>
+                                </button>
+                            )}
+                        </div>
+                    </header>
+
+                    <main className="flex-grow overflow-y-auto p-4 no-scrollbar">
+                        {isSearching ? (
+                            <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>
+                        ) : searchResults.length > 0 ? (
+                            <div className="space-y-2">
+                                {searchResults.map(user => (
+                                    <div 
+                                        key={user.id}
+                                        onClick={() => { onSelectUser(user.id); closeSearch(); }}
+                                        className="flex items-center gap-4 p-4 hover:bg-zinc-50 dark:hover:bg-zinc-900 rounded-[1.5rem] cursor-pointer transition-all active:scale-95 group"
+                                    >
+                                        <img src={user.avatar} className="w-14 h-14 rounded-full object-cover border-2 border-transparent group-hover:border-indigo-500/30 transition-all"/>
+                                        <div className="flex-grow">
+                                            <p className="font-black text-sm flex items-center gap-1">
+                                                {user.username}
+                                                {user.isVerified && <VerifiedBadge className="w-3.5 h-3.5" />}
+                                            </p>
+                                            {user.bio && <p className="text-[10px] text-zinc-500 truncate max-w-[200px]">{user.bio}</p>}
+                                        </div>
+                                        <svg className="w-5 h-5 text-zinc-300 group-hover:text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 5l7 7-7 7" strokeWidth={2.5}/></svg>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : searchQuery && (
+                            <div className="text-center py-20 opacity-30">
+                                <svg className="w-16 h-16 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                <p className="text-xs font-black uppercase tracking-widest">Nenhum sinal detectado</p>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            )}
         </header>
     );
 };
