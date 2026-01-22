@@ -17,6 +17,7 @@ import CreateMenuModal from './feed/CreateMenuModal';
 import WeatherBanner from './feed/WeatherBanner';
 import ParadiseCameraModal from './feed/ParadiseCameraModal';
 import VibeBeamModal from './feed/VibeBeamModal';
+import ForwardModal from './messages/ForwardModal';
 import { auth, db, collection, query, onSnapshot, orderBy, getDocs, where, doc, getDoc, limit, deleteDoc, updateDoc, serverTimestamp } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -41,16 +42,17 @@ const Feed: React.FC = () => {
   const [isMessagesOpen, setIsMessagesOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isBrowserOpen, setIsBrowserOpen] = useState(false);
+  const [isForwardOpen, setIsForwardOpen] = useState(false);
   
   const [viewingPulseGroup, setViewingPulseGroup] = useState<any | null>(null);
   const [targetUserForMessages, setTargetUserForMessages] = useState<any>(null);
   const [targetConversationId, setTargetConversationId] = useState<string | null>(null);
+  const [selectedPostToForward, setSelectedPostToForward] = useState<any>(null);
   
   const [selectedMedia, setSelectedMedia] = useState<any[]>([]);
 
   const currentUser = auth.currentUser;
 
-  // Escutar Alertas de Sistema em Tempo Real
   useEffect(() => {
     if (!currentUser) return;
     const q = query(
@@ -73,7 +75,6 @@ const Feed: React.FC = () => {
     return () => unsub();
   }, [currentUser]);
 
-  // Timer do Alerta (20 segundos)
   useEffect(() => {
     if (systemAlert) {
         const duration = 20000;
@@ -147,9 +148,13 @@ const Feed: React.FC = () => {
     }
   };
 
+  const handleForwardPost = (post: any) => {
+      setSelectedPostToForward(post);
+      setIsForwardOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      {/* Alerta de Sistema (Feed) */}
       {systemAlert && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1500] w-[95%] max-w-lg animate-slide-down">
           <div className="bg-indigo-600 text-white p-5 rounded-[2rem] shadow-2xl relative overflow-hidden ring-4 ring-indigo-500/20">
@@ -213,7 +218,7 @@ const Feed: React.FC = () => {
             {loading && <div className="flex justify-center py-10"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-sky-500"></div></div>}
             <div className="flex flex-col gap-4 mt-4">
                 {posts.length > 0 ? posts.map(p => (
-                    <Post key={p.id} post={p} onPostDeleted={(id) => deleteDoc(doc(db, 'posts', id))} />
+                    <Post key={p.id} post={p} onPostDeleted={(id) => deleteDoc(doc(db, 'posts', id))} onForward={handleForwardPost} />
                 )) : !loading && <div className="text-center py-20 text-zinc-500 font-bold uppercase text-xs tracking-widest">{t('feed.empty')}</div>}
             </div>
           </div>
@@ -249,6 +254,7 @@ const Feed: React.FC = () => {
       {isBrowserOpen && <VibeBrowser onClose={() => setIsBrowserOpen(false)} />}
       <ParadiseCameraModal isOpen={isParadiseOpen} onClose={() => setIsParadiseOpen(false)} />
       <VibeBeamModal isOpen={isBeamOpen} onClose={() => setIsBeamOpen(false)} />
+      <ForwardModal isOpen={isForwardOpen} onClose={() => setIsForwardOpen(false)} post={selectedPostToForward} />
 
       <style>{`
         @keyframes slide-down { from { transform: translate(-50%, -100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }

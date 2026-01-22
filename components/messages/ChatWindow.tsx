@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
     auth, db, doc, collection, query, orderBy, onSnapshot, serverTimestamp, 
-    updateDoc, addDoc, storage, storageRef, uploadBytes, getDownloadURL, deleteDoc 
+    updateDoc, addDoc, storage, storageRef, uploadBytes, getDownloadURL, deleteDoc, increment
 } from '../../firebase';
 import { useLanguage } from '../../context/LanguageContext';
 import { useCall } from '../../context/CallContext';
@@ -14,15 +15,12 @@ const ChatWindow: React.FC<{ conversationId: string | null; onBack: () => void; 
     const [newMessage, setNewMessage] = useState('');
     const [convData, setConvData] = useState<any>(null);
     const [isUploading, setIsUploading] = useState(false);
-    const [isRecording, setIsRecording] = useState(false);
-    const [recordingTime, setRecordingTime] = useState(0);
     const [showAttachments, setShowAttachments] = useState(false);
-    
+    const [viewLimit, setViewLimit] = useState<number | null>(null);
+    const [selectedEfimeralMedia, setSelectedEfimeralMedia] = useState<any | null>(null);
+
     const scrollRef = useRef<HTMLDivElement>(null);
     const mediaInputRef = useRef<HTMLInputElement>(null);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const audioChunksRef = useRef<Blob[]>([]);
-    const timerRef = useRef<number | null>(null);
     
     const currentUser = auth.currentUser;
 
@@ -36,14 +34,13 @@ const ChatWindow: React.FC<{ conversationId: string | null; onBack: () => void; 
 
     useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-    const sendMessage = async (data: { text?: string, mediaUrl?: string, mediaType?: string, location?: any }) => {
+    const sendMessage = async (data: { text?: string, mediaUrl?: string, mediaType?: string, location?: any, viewLimit?: number | null }) => {
         if (!conversationId || !currentUser || !convData) return;
-
-        const otherUserId = convData.participants.find((p: string) => p !== currentUser.uid);
 
         const msgPayload = {
             senderId: currentUser.uid,
             timestamp: serverTimestamp(),
+            viewersCount: {},
             ...data
         };
 
@@ -51,31 +48,21 @@ const ChatWindow: React.FC<{ conversationId: string | null; onBack: () => void; 
         
         await updateDoc(doc(db, 'conversations', conversationId), {
             lastMessage: { 
-                text: data.text || `Enviou um(a) ${data.mediaType || 'mídia'}`, 
+                text: data.text || `Enviou um(a) ${data.viewLimit ? 'mídia efêmera' : (data.mediaType === 'image' ? 'foto' : 'vídeo')}`, 
                 senderId: currentUser.uid, 
                 timestamp: serverTimestamp() 
             },
             timestamp: serverTimestamp()
         });
-
-        // Néos OneSignal: A notificação será disparada via Cloud Function observando o Firestore
+        
+        setViewLimit(null);
     };
 
-    const handleDeleteMessage = async (messageId: string) => {
-        if (!conversationId || !window.confirm("Deseja apagar esta mensagem para todos?")) return;
-        try {
-            await deleteDoc(doc(db, 'conversations', conversationId, 'messages', messageId));
-        } catch (err) {
-            console.error("Erro ao apagar mensagem:", err);
-        }
-    };
-
-    const handleSendText = async (e?: React.FormEvent) => {
-        if (e) e.preventDefault();
+    const handleSendText = async (e: React.FormEvent) => {
+        e.preventDefault();
         if (!newMessage.trim()) return;
-        const text = newMessage.trim();
+        await sendMessage({ text: newMessage.trim() });
         setNewMessage('');
-        await sendMessage({ text, mediaType: 'text' });
     };
 
     const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,7 +77,8 @@ const ChatWindow: React.FC<{ conversationId: string | null; onBack: () => void; 
             await uploadBytes(ref, file);
             const url = await getDownloadURL(ref);
             const type = file.type.startsWith('video/') ? 'video' : 'image';
-            await sendMessage({ mediaUrl: url, mediaType: type });
+            
+            await sendMessage({ mediaUrl: url, mediaType: type, viewLimit: viewLimit });
         } catch (err) {
             console.error(err);
         } finally {
@@ -98,53 +86,25 @@ const ChatWindow: React.FC<{ conversationId: string | null; onBack: () => void; 
         }
     };
 
-    const startRecording = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const recorder = new MediaRecorder(stream);
-            mediaRecorderRef.current = recorder;
-            audioChunksRef.current = [];
-
-            recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
-            recorder.onstop = async () => {
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                setIsUploading(true);
-                const path = `chats/${conversationId}/audio_${Date.now()}.webm`;
-                const ref = storageRef(storage, path);
-                await uploadBytes(ref, audioBlob);
-                const url = await getDownloadURL(ref);
-                await sendMessage({ mediaUrl: url, mediaType: 'audio' });
-                setIsUploading(false);
-                stream.getTracks().forEach(track => track.stop());
-            };
-
-            recorder.start();
-            setIsRecording(true);
-            setRecordingTime(0);
-            timerRef.current = window.setInterval(() => setRecordingTime(prev => prev + 1), 1000);
-        } catch (err) {
-            alert("Erro ao acessar microfone.");
-        }
+    const registerView = async (msgId: string) => {
+        if (!currentUser || !conversationId) return;
+        const msgRef = doc(db, 'conversations', conversationId, 'messages', msgId);
+        await updateDoc(msgRef, {
+            [`viewersCount.${currentUser.uid}`]: increment(1)
+        });
     };
 
-    const stopRecording = () => {
-        if (mediaRecorderRef.current && isRecording) {
-            mediaRecorderRef.current.stop();
-            setIsRecording(false);
-            if (timerRef.current) clearInterval(timerRef.current);
-        }
+    const handleOpenEfimeral = (msg: any) => {
+        const count = msg.viewersCount?.[currentUser?.uid || ''] || 0;
+        if (count >= msg.viewLimit) return;
+        setSelectedEfimeralMedia(msg);
     };
 
-    const sendLocation = () => {
-        setShowAttachments(false);
-        navigator.geolocation.getCurrentPosition(async (pos) => {
-            const { latitude, longitude } = pos.coords;
-            await sendMessage({ 
-                location: { lat: latitude, lng: longitude },
-                mediaType: 'location',
-                text: "📍 Localização enviada"
-            });
-        }, () => alert("Erro ao obter localização."));
+    const closeEfimeral = () => {
+        if (selectedEfimeralMedia) {
+            registerView(selectedEfimeralMedia.id);
+            setSelectedEfimeralMedia(null);
+        }
     };
 
     if (!conversationId || !convData) return null;
@@ -160,7 +120,6 @@ const ChatWindow: React.FC<{ conversationId: string | null; onBack: () => void; 
                     </button>
                     <div className="relative">
                         <img src={otherUser?.avatar} className="w-10 h-10 rounded-full object-cover border dark:border-zinc-800" />
-                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white dark:border-black rounded-full"></div>
                     </div>
                     <div className="flex flex-col">
                         <span className="font-black text-sm flex items-center gap-1">
@@ -175,63 +134,44 @@ const ChatWindow: React.FC<{ conversationId: string | null; onBack: () => void; 
                     <button onClick={() => startCall({ id: otherUserId, ...otherUser }, false)} className="p-2.5 text-zinc-600 dark:text-zinc-400 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-950/20 rounded-xl transition-all">
                         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
                     </button>
-                    <button onClick={() => startCall({ id: otherUserId, ...otherUser }, true)} className="p-2.5 text-zinc-600 dark:text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 rounded-xl transition-all">
-                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                    </button>
                 </div>
             </header>
 
             <div className="flex-grow overflow-y-auto p-4 space-y-4 no-scrollbar bg-zinc-50 dark:bg-zinc-950/30">
                 {messages.map(msg => {
-                    const isSystem = msg.senderId === 'system_call_log';
                     const isMine = msg.senderId === currentUser?.uid;
-                    
-                    if (isSystem) {
-                        return (
-                            <div key={msg.id} className="flex justify-center my-4 animate-fade-in">
-                                <div className="bg-zinc-100 dark:bg-zinc-900/50 px-4 py-2 rounded-2xl border dark:border-zinc-800 flex items-center gap-3">
-                                    <div className={`p-1.5 rounded-full ${msg.isVideo ? 'bg-indigo-500/10 text-indigo-500' : 'bg-sky-500/10 text-sky-500'}`}>
-                                        {msg.isVideo ? <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg> : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>}
-                                    </div>
-                                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{msg.text}</span>
-                                </div>
-                            </div>
-                        );
-                    }
+                    const count = msg.viewersCount?.[currentUser?.uid || ''] || 0;
+                    const isEfimeral = msg.viewLimit > 0;
+                    const isExpired = isEfimeral && count >= msg.viewLimit;
 
                     return (
                         <div key={msg.id} className={`flex group/msg ${isMine ? 'justify-end' : 'justify-start'} animate-fade-in relative`}>
-                            {isMine && (
-                                <button 
-                                    onClick={() => handleDeleteMessage(msg.id)} 
-                                    className="opacity-0 group-hover/msg:opacity-100 transition-opacity p-2 text-zinc-400 hover:text-red-500 mr-2 self-center"
-                                    title="Apagar mensagem"
-                                >
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/></svg>
-                                </button>
-                            )}
                             <div className={`max-w-[80%] rounded-[1.5rem] shadow-sm overflow-hidden relative ${
                                 isMine 
                                     ? 'bg-sky-500 text-white rounded-tr-sm' 
                                     : 'bg-white dark:bg-zinc-900 text-black dark:text-white border dark:border-zinc-800 rounded-tl-sm'
                             }`}>
-                                {msg.mediaType === 'image' && <img src={msg.mediaUrl} className="w-full max-h-80 object-cover cursor-pointer" onClick={() => window.open(msg.mediaUrl)} />}
-                                {msg.mediaType === 'video' && <video src={msg.mediaUrl} controls className="w-full max-h-80 object-cover" />}
-                                {msg.mediaType === 'audio' && (
-                                    <div className="p-3 flex items-center gap-3 min-w-[200px]">
-                                        <audio src={msg.mediaUrl} controls className="h-8 w-full accent-white" />
-                                    </div>
-                                )}
-                                {msg.mediaType === 'location' && (
-                                    <a href={`https://www.google.com/maps?q=${msg.location.lat},${msg.location.lng}`} target="_blank" rel="noopener" className="p-4 flex flex-col gap-2 hover:bg-black/5 transition-colors">
-                                        <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-widest">
-                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
-                                            Minha Localização
+                                {isEfimeral ? (
+                                    <div 
+                                        onClick={() => !isExpired && handleOpenEfimeral(msg)}
+                                        className={`p-4 flex flex-col items-center justify-center gap-3 cursor-pointer min-w-[240px] transition-all ${isExpired ? 'opacity-40 grayscale' : 'hover:bg-black/5'}`}
+                                    >
+                                        <div className={`w-14 h-14 rounded-full flex items-center justify-center ${isExpired ? 'bg-zinc-200 dark:bg-zinc-800' : 'bg-sky-100 dark:bg-sky-950 text-sky-500 animate-pulse'}`}>
+                                            {isExpired ? <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" strokeWidth={2}/></svg> : <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" strokeWidth={2}/></svg>}
                                         </div>
-                                        <div className="h-24 bg-zinc-100 dark:bg-zinc-800 rounded-xl flex items-center justify-center text-[10px] uppercase font-black text-zinc-500">Ver no Mapa</div>
-                                    </a>
+                                        <div className="text-center">
+                                            <p className="text-xs font-black uppercase tracking-widest">{isExpired ? 'Mídia Expirada' : `Você só pode abrir ${msg.viewLimit} vezes`}</p>
+                                            {!isExpired && <p className="text-[10px] opacity-60 font-bold">Toque para visualizar ({count}/{msg.viewLimit})</p>}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {msg.mediaType === 'image' && <img src={msg.mediaUrl} className="w-full max-h-80 object-cover cursor-pointer" onClick={() => window.open(msg.mediaUrl)} />}
+                                        {msg.mediaType === 'video' && <video src={msg.mediaUrl} controls className="w-full max-h-80 object-cover" />}
+                                        {msg.mediaType === 'audio' && <div className="p-3"><audio src={msg.mediaUrl} controls className="h-8 w-full accent-white" /></div>}
+                                        {msg.text && <div className="p-3.5 text-sm font-medium leading-relaxed">{msg.text}</div>}
+                                    </>
                                 )}
-                                {msg.text && <div className="p-3.5 text-sm font-medium leading-relaxed">{msg.text}</div>}
                             </div>
                         </div>
                     );
@@ -241,49 +181,71 @@ const ChatWindow: React.FC<{ conversationId: string | null; onBack: () => void; 
 
             <div className="p-4 border-t dark:border-zinc-800 bg-white dark:bg-black relative">
                 {showAttachments && (
-                    <div className="absolute bottom-full left-4 mb-2 bg-white dark:bg-zinc-900 border dark:border-zinc-800 rounded-3xl shadow-2xl p-2 flex flex-col gap-1 animate-slide-up z-20">
-                        <button onClick={() => mediaInputRef.current?.click()} className="flex items-center gap-3 p-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-2xl transition-colors">
-                            <div className="w-10 h-10 bg-sky-500/10 text-sky-500 rounded-full flex items-center justify-center"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
-                            <span className="text-xs font-bold uppercase tracking-widest pr-4">Fotos e Vídeos</span>
-                        </button>
-                        <button onClick={sendLocation} className="flex items-center gap-3 p-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-2xl transition-colors">
-                            <div className="w-10 h-10 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg></div>
-                            <span className="text-xs font-bold uppercase tracking-widest pr-4">Localização</span>
+                    <div className="absolute bottom-full left-4 mb-2 bg-white dark:bg-zinc-900 border dark:border-zinc-800 rounded-[2.5rem] shadow-2xl p-4 flex flex-col gap-4 animate-slide-up z-20 w-64">
+                         <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-3 px-2">Opções de Visualização</p>
+                            <div className="grid grid-cols-4 gap-2 px-2">
+                                {[null, 1, 2, 3].map(v => (
+                                    <button 
+                                        key={v || 'inf'} 
+                                        onClick={() => setViewLimit(v)}
+                                        className={`py-2 rounded-xl text-[10px] font-black border transition-all ${viewLimit === v ? 'bg-sky-500 text-white border-sky-500' : 'bg-transparent text-zinc-400 border-zinc-200 dark:border-zinc-800'}`}
+                                    >
+                                        {v || '∞'}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <button onClick={() => mediaInputRef.current?.click()} className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-800 rounded-2xl transition-colors hover:scale-[1.02]">
+                            <div className="w-10 h-10 bg-sky-500/10 text-sky-500 rounded-full flex items-center justify-center"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
+                            <span className="text-xs font-black uppercase tracking-tighter">Escolher Mídia</span>
                         </button>
                     </div>
                 )}
 
                 <div className="flex items-center gap-2">
-                    <button onClick={() => setShowAttachments(!showAttachments)} className={`p-2.5 rounded-full transition-all ${showAttachments ? 'bg-sky-500 text-white rotate-45' : 'text-zinc-500'}`}>
+                    <button onClick={() => setShowAttachments(!showAttachments)} className={`p-2.5 rounded-full transition-all ${showAttachments ? 'bg-sky-500 text-white rotate-45 shadow-lg' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}>
                         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M12 4v16m8-8H4" /></svg>
                     </button>
-                    
-                    {isRecording ? (
-                        <div className="flex-grow flex items-center gap-4 bg-red-500/10 rounded-full px-5 py-2 border border-red-500/20">
-                            <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></div>
-                            <span className="text-red-500 font-mono text-sm font-black">{Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}</span>
-                            <button onClick={stopRecording} className="bg-red-500 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-lg">Parar</button>
-                        </div>
-                    ) : (
-                        <form onSubmit={handleSendText} className="flex-grow flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-full py-1.5 px-2">
-                            <input 
-                                type="text" 
-                                value={newMessage} 
-                                onChange={e => setNewMessage(e.target.value)} 
-                                placeholder="Mensagem..." 
-                                className="flex-grow bg-transparent py-1.5 px-4 text-sm outline-none font-medium" 
-                            />
-                            {newMessage.trim() ? (
-                                <button type="submit" className="p-2 bg-sky-500 text-white rounded-full"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M5 13l4 4L19 7" /></svg></button>
-                            ) : (
-                                <button type="button" onClick={startRecording} className="p-2.5 text-zinc-500 hover:text-sky-500"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg></button>
-                            )}
-                        </form>
-                    )}
+                    <form onSubmit={handleSendText} className="flex-grow flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-full py-1.5 px-2">
+                        <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="Mensagem..." className="flex-grow bg-transparent py-1.5 px-4 text-sm outline-none font-medium" />
+                        <button type="submit" className="p-2 bg-sky-500 text-white rounded-full disabled:opacity-50"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M5 13l4 4L19 7" /></svg></button>
+                    </form>
                 </div>
             </div>
             
             <input type="file" ref={mediaInputRef} onChange={handleMediaUpload} className="hidden" accept="image/*,video/*" />
+
+            {/* Modal de Mídia Efêmera */}
+            {selectedEfimeralMedia && (
+                <div className="fixed inset-0 z-[1000] bg-black flex flex-col items-center justify-center p-0 select-none animate-fade-in" onContextMenu={e => e.preventDefault()}>
+                    <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-10 bg-gradient-to-b from-black/80 to-transparent">
+                        <div className="flex items-center gap-3">
+                            <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></div>
+                            <span className="text-white text-[10px] font-black uppercase tracking-[0.2em]">Modo Seguro Néos</span>
+                        </div>
+                        <button onClick={closeEfimeral} className="text-white/40 text-4xl font-thin hover:text-white transition-colors">&times;</button>
+                    </header>
+                    
+                    <div className="w-full h-full flex items-center justify-center">
+                        {selectedEfimeralMedia.mediaType === 'video' ? (
+                            <video src={selectedEfimeralMedia.mediaUrl} autoPlay className="max-w-full max-h-full" />
+                        ) : (
+                            <img src={selectedEfimeralMedia.mediaUrl} className="max-w-full max-h-full object-contain pointer-events-none" />
+                        )}
+                    </div>
+
+                    <footer className="absolute bottom-0 left-0 right-0 p-10 text-center bg-gradient-to-t from-black/80 to-transparent">
+                        <p className="text-white/30 text-[9px] font-bold uppercase tracking-[0.4em]">A mídia será bloqueada ao sair desta tela</p>
+                    </footer>
+                    
+                    <style>{`
+                        body { overflow: hidden !important; }
+                        * { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+                        .no-screenshot { pointer-events: none; }
+                    `}</style>
+                </div>
+            )}
         </div>
     );
 };

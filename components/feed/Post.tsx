@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { auth, db, doc, updateDoc, arrayUnion, arrayRemove, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc } from '../../firebase';
 import { useLanguage } from '../../context/LanguageContext';
@@ -38,6 +39,8 @@ interface PostProps {
     onViewPulse?: (userId: string) => void;
 }
 
+const ADMIN_EMAIL = "Matheuslp2755@gmail.com";
+
 const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse }) => {
     const { t } = useLanguage();
     const { formatTimestamp } = useTimeAgo();
@@ -61,8 +64,8 @@ const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse
     const currentUser = auth.currentUser;
     const isAuthor = currentUser?.uid === post.userId;
     const isLiked = post.likes.includes(currentUser?.uid || '');
+    const isOwnerAdmin = currentUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
 
-    // Sistema de Autoplay via Intersection Observer
     useEffect(() => {
         const observer = new IntersectionObserver(
             (entries) => {
@@ -147,6 +150,24 @@ const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse
         if (!currentUser || post.disableLikes) return;
         const ref = doc(db, 'posts', post.id);
         await updateDoc(ref, { likes: isLiked ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid) });
+    };
+
+    const handleSendAlert = async () => {
+        if (!currentUser || !isOwnerAdmin) return;
+        setIsMenuOpen(false);
+        try {
+            await addDoc(collection(db, 'notifications_in_app'), {
+                recipientId: post.userId,
+                title: 'Alerta Vibrante!',
+                body: `@${currentUser.displayName} enviou um sinal de atenção no seu post.`,
+                type: 'system',
+                read: false,
+                timestamp: serverTimestamp()
+            });
+            alert("Alerta administrativo enviado!");
+        } catch (e) {
+            console.error(e);
+        }
     };
 
     const handleReportPost = async () => {
@@ -236,7 +257,12 @@ const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse
                                     <button onClick={() => { onPostDeleted(post.id); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm text-red-500 font-black border-t dark:border-zinc-800 mt-1">Excluir</button>
                                 </>
                             ) : (
-                                <button onClick={handleReportPost} className="w-full text-left px-4 py-3 text-sm text-red-500 font-bold">Denunciar</button>
+                                <>
+                                    {isOwnerAdmin && (
+                                        <button onClick={handleSendAlert} className="w-full text-left px-4 py-3 text-sm text-sky-500 font-black hover:bg-zinc-50 dark:hover:bg-zinc-800">Enviar Alerta Administrativo</button>
+                                    )}
+                                    <button onClick={handleReportPost} className="w-full text-left px-4 py-3 text-sm text-red-500 font-bold">Denunciar</button>
+                                </>
                             )}
                         </div>
                     )}
@@ -257,7 +283,6 @@ const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse
                     <img src={post.imageUrl || post.media?.[0].url} className="w-full h-full object-cover transition-transform duration-700 group-hover/post:scale-105" alt="Content" />
                 )}
                 
-                {/* Overlay de Áudio / Mudo */}
                 {(post.musicInfo || isPostVideo) && (
                     <div className="absolute bottom-4 right-4 z-10 animate-fade-in">
                         <button 
@@ -274,7 +299,6 @@ const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse
                 )}
             </div>
 
-            {/* Barra de Trilha Sonora com Autoplay Controlado */}
             {post.musicInfo && (
                 <div className="border-b dark:border-zinc-800">
                     <MusicPlayer 
@@ -298,7 +322,7 @@ const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse
                             <svg className="w-8 h-8 text-zinc-800 dark:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
                         </button>
                     )}
-                    <button onClick={() => onForward?.(post)}>
+                    <button onClick={() => onForward?.(post)} className="active:scale-110 transition-transform">
                         <svg className="w-8 h-8 text-zinc-800 dark:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
                     </button>
                 </div>
@@ -334,7 +358,7 @@ const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse
                     <div className="bg-white dark:bg-zinc-950 w-full max-w-lg rounded-t-[2.5rem] h-[70vh] flex flex-col p-6 animate-slide-up" onClick={e => e.stopPropagation()}>
                         <h2 className="text-center font-black text-sm uppercase mb-4">Comentários</h2>
                         <div className="flex-grow overflow-y-auto space-y-4 no-scrollbar">
-                            {/* Renderize os comentários aqui */}
+                             {/* Comentários aqui */}
                         </div>
                         <form onSubmit={handleAddComment} className="mt-4 flex gap-2">
                             <input value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Comentar..." className="flex-grow bg-zinc-100 dark:bg-zinc-900 p-3 rounded-2xl text-sm" />
