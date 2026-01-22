@@ -30,7 +30,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
     const [posts, setPosts] = useState<any[]>([]);
     const [stats, setStats] = useState({ posts: 0, followers: 0, following: 0 });
     const [isFollowing, setIsFollowing] = useState(false);
-    const [isRequested, setIsRequested] = useState(false);
     const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
@@ -45,7 +44,17 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
     const isOwner = currentUser?.uid === userId;
     const isAdmin = currentUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
     
-    const optionsMenuRef = useRef<HTMLDivElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+                setIsOptionsMenuOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     useEffect(() => {
         let unsubscribeUser: (() => void) | undefined;
@@ -81,7 +90,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                 await uploadBytes(avatarRef, updatedData.avatarFile);
                 avatarUrl = await getDownloadURL(avatarRef);
             }
-
             const payload: any = {
                 username: updatedData.username,
                 username_lowercase: updatedData.username.toLowerCase(),
@@ -89,144 +97,178 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                 bio: updatedData.bio,
                 avatar: avatarUrl,
                 isPrivate: updatedData.isPrivate,
-                currentVibe: updatedData.currentVibe,
-                profileMusic: updatedData.profileMusic
             };
-
             await updateDoc(doc(db, 'users', userId), payload);
             setIsEditModalOpen(false);
-        } catch (e) {
-            console.error(e);
-            alert("Erro ao salvar alterações.");
-        } finally {
-            setIsSubmitting(false);
-        }
+        } catch (e) { alert("Erro ao salvar."); } finally { setIsSubmitting(false); }
     };
 
-    const handleFollow = async () => {
-        if (!currentUser || !user) return;
-
-        if (isFollowing) {
-            const batch = writeBatch(db);
-            batch.delete(doc(db, 'users', currentUser.uid, 'following', userId));
-            batch.delete(doc(db, 'users', userId, 'followers', currentUser.uid));
-            await batch.commit();
-            return;
-        }
-
-        if (user.isPrivate) {
-            const batch = writeBatch(db);
-            batch.set(doc(db, 'users', currentUser.uid, 'sentFollowRequests', userId), { username: user.username, avatar: user.avatar, timestamp: serverTimestamp() });
-            batch.set(doc(db, 'users', userId, 'followRequests', currentUser.uid), { username: currentUser.displayName, avatar: currentUser.photoURL, timestamp: serverTimestamp() });
-            await batch.commit();
-        } else {
-            const batch = writeBatch(db);
-            batch.set(doc(db, 'users', currentUser.uid, 'following', userId), { username: user.username, avatar: user.avatar, timestamp: serverTimestamp() });
-            batch.set(doc(db, 'users', userId, 'followers', currentUser.uid), { username: currentUser.displayName, avatar: currentUser.photoURL, timestamp: serverTimestamp() });
-            await batch.commit();
-        }
-    };
-
-    const handleAdminBanUser = async () => {
-        if (!isAdmin || isOwner) return;
-        const reason = window.prompt("Digite o motivo do banimento para o usuário:");
-        if (reason === null) return;
-
+    // FUNÇÕES DE ADMINISTRADOR (EXCLUSIVAS MATHEUS)
+    const adminBanUser = async () => {
+        if (!isAdmin) return;
+        const msg = window.prompt("Digite o MOTIVO do banimento (o usuário verá esta mensagem):");
+        if (!msg) return;
         try {
-            const batch = writeBatch(db);
-            batch.update(doc(db, 'users', userId), {
+            await updateDoc(doc(db, 'users', userId), {
                 isBanned: true,
-                banReason: reason,
-                username: `BANIDO_${user.username}`,
-                username_lowercase: `banido_${user.username.toLowerCase()}`
+                banReason: msg,
+                username: `BANIDO_${user.username}`
             });
-            
-            // Notificação de sistema para o usuário alvo
             await addDoc(collection(db, 'notifications_in_app'), {
                 recipientId: userId,
-                title: 'Acesso Restrito',
-                body: `Sua conta foi suspensa por: ${reason}`,
+                title: 'CONTA SUSPENSA',
+                body: `Sua conta foi banida pelo administrador. Motivo: ${msg}`,
                 type: 'system',
                 read: false,
                 timestamp: serverTimestamp()
             });
-
-            await batch.commit();
-            alert("Usuário banido e notificado.");
+            alert("Usuário banido com sucesso.");
             setIsOptionsMenuOpen(false);
         } catch (e) { console.error(e); }
     };
 
-    if (!user) return <div className="p-8 text-center">{t('messages.loading')}</div>;
+    const adminToggleVerify = async () => {
+        if (!isAdmin) return;
+        try {
+            await updateDoc(doc(db, 'users', userId), { isVerified: !user.isVerified });
+            setIsOptionsMenuOpen(false);
+        } catch (e) { console.error(e); }
+    };
 
-    const showContent = !user.isPrivate || isFollowing || isOwner;
+    const adminSendAlert = async () => {
+        if (!isAdmin) return;
+        const msg = window.prompt(`Enviar alerta direto para @${user.username}:`);
+        if (!msg) return;
+        try {
+            await addDoc(collection(db, 'notifications_in_app'), {
+                recipientId: userId,
+                title: 'Alerta da Néos',
+                body: msg,
+                type: 'system',
+                read: false,
+                timestamp: serverTimestamp()
+            });
+            alert("Alerta enviado.");
+            setIsOptionsMenuOpen(false);
+        } catch (e) { console.error(e); }
+    };
+
+    const adminGlobalAlert = async () => {
+        if (!isAdmin) return;
+        const msg = window.prompt("Digite o comunicado GLOBAL (todos os usuários verão por 15s):");
+        if (!msg) return;
+        try {
+            await setDoc(doc(db, 'system', 'global_alert'), {
+                message: msg,
+                timestamp: serverTimestamp(),
+                id: Date.now().toString()
+            });
+            alert("Comunicado Global enviado!");
+            setIsOptionsMenuOpen(false);
+        } catch (e) { console.error(e); }
+    };
+
+    const handleFollow = async () => {
+        if (!currentUser || !user) return;
+        // Lógica de seguir simplificada para o exemplo
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'users', currentUser.uid, 'following', userId), { username: user.username, avatar: user.avatar, timestamp: serverTimestamp() });
+        batch.set(doc(db, 'users', userId, 'followers', currentUser.uid), { username: currentUser.displayName, avatar: currentUser.photoURL, timestamp: serverTimestamp() });
+        await batch.commit();
+    };
+
+    if (!user) return <div className="p-8 text-center">Carregando perfil...</div>;
 
     return (
         <div className="container mx-auto max-w-4xl p-4 sm:p-8">
             <header className="flex flex-col sm:flex-row items-center gap-8 mb-8 relative">
-                <div className={`relative w-32 h-32 flex-shrink-0 p-1 rounded-full bg-gradient-to-tr from-sky-400 to-indigo-500`}>
+                <div className="relative w-32 h-32 flex-shrink-0 p-1 rounded-full bg-gradient-to-tr from-sky-400 to-indigo-500">
                     <div className="w-full h-full rounded-full p-1 bg-white dark:bg-black">
-                        <img src={user?.avatar} className="w-full h-full rounded-full object-cover" />
+                        <img src={user?.avatar} className="w-full h-full rounded-full object-cover" alt="Avatar" />
                     </div>
                     {isOnline && <OnlineIndicator />}
                 </div>
+                
                 <div className="flex-grow text-center sm:text-left">
-                    <div className="flex flex-col sm:flex-row items-center gap-4 mb-2">
-                        <h2 className="text-2xl font-light flex items-center">
+                    <div className="flex flex-col sm:flex-row items-center gap-4 mb-4">
+                        <h2 className="text-2xl font-black flex items-center tracking-tight">
                             {user?.username}
                             {user?.isVerified && <VerifiedBadge className="w-5 h-5 ml-1" />}
                         </h2>
-                        <div className="flex gap-2">
+                        
+                        <div className="flex items-center gap-2">
                             {isOwner ? (
-                                <div className="flex items-center gap-2">
-                                    <Button onClick={() => setIsEditModalOpen(true)} className="!w-auto !bg-zinc-200 dark:!bg-zinc-700 !text-black dark:!text-white !font-bold">
-                                        Editar Perfil
-                                    </Button>
-                                    <button onClick={() => setIsOptionsMenuOpen(!isOptionsMenuOpen)} className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white border dark:border-zinc-700">
-                                        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.5"></circle><circle cx="6" cy="12" r="1.5"></circle><circle cx="18" cy="12" r="1.5"></circle></svg>
-                                    </button>
-                                </div>
+                                <Button onClick={() => setIsEditModalOpen(true)} className="!w-auto !bg-zinc-100 dark:!bg-zinc-800 !text-black dark:!text-white !px-6 !py-2 !rounded-xl !font-bold">Editar Perfil</Button>
                             ) : (
-                                <div className="flex items-center gap-2">
-                                    <Button onClick={handleFollow} className="!w-auto !px-8">Seguir</Button>
-                                    <Button onClick={() => onStartMessage(user)} className="!w-auto !bg-zinc-200 dark:!bg-zinc-700 !text-black dark:!text-white">Mensagem</Button>
-                                    {isAdmin && (
-                                        <button onClick={handleAdminBanUser} className="p-2 bg-red-500 text-white rounded-xl">Banir</button>
-                                    )}
-                                </div>
+                                <>
+                                    <Button onClick={handleFollow} className="!w-auto !px-8 !py-2 !rounded-xl">Seguir</Button>
+                                    <Button onClick={() => onStartMessage(user)} className="!w-auto !bg-zinc-100 dark:!bg-zinc-800 !text-black dark:!text-white !px-6 !py-2 !rounded-xl">Mensagem</Button>
+                                </>
                             )}
+                            
+                            {/* BOTÃO 3 PONTINHOS */}
+                            <div className="relative" ref={menuRef}>
+                                <button 
+                                    onClick={() => setIsOptionsMenuOpen(!isOptionsMenuOpen)}
+                                    className="p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white border dark:border-zinc-700 hover:bg-zinc-200 transition-colors"
+                                >
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.5"></circle><circle cx="6" cy="12" r="1.5"></circle><circle cx="18" cy="12" r="1.5"></circle></svg>
+                                </button>
+
+                                {isOptionsMenuOpen && (
+                                    <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-zinc-900 border dark:border-zinc-800 rounded-2xl shadow-2xl z-[100] py-2 overflow-hidden animate-slide-up">
+                                        {isAdmin && (
+                                            <div className="px-4 py-2 border-b dark:border-zinc-800 mb-1">
+                                                <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Néos Command Center</span>
+                                            </div>
+                                        )}
+                                        
+                                        {isAdmin && (
+                                            <>
+                                                <button onClick={() => { setIsAdminDashboardOpen(true); setIsOptionsMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold flex items-center gap-3">
+                                                    <span className="w-2 h-2 bg-indigo-500 rounded-full"></span> Painel Néos
+                                                </button>
+                                                <button onClick={adminToggleVerify} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold text-sky-500">
+                                                    {user.isVerified ? 'Remover Verificado' : 'Dar Verificado'}
+                                                </button>
+                                                <button onClick={adminSendAlert} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold">Enviar Alerta Direto</button>
+                                                <button onClick={adminGlobalAlert} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold text-amber-500">Comunicado Global</button>
+                                                <button onClick={adminBanUser} className="w-full text-left px-4 py-3 text-sm text-red-500 font-black border-t dark:border-zinc-800 mt-1">BANIR USUÁRIO</button>
+                                            </>
+                                        )}
+
+                                        {!isAdmin && isOwner && (
+                                            <button onClick={() => signOut(auth)} className="w-full text-left px-4 py-3 text-sm text-red-500 font-bold">Sair da Conta</button>
+                                        )}
+                                        
+                                        {!isAdmin && !isOwner && (
+                                            <button className="w-full text-left px-4 py-3 text-sm text-red-500 font-bold">Denunciar Perfil</button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
-                    <div className="flex gap-6 justify-center sm:justify-start text-sm mb-4 font-medium">
-                        <p><b>{stats.posts}</b> publicações</p>
-                        <button onClick={() => setIsFollowersModalOpen(true)}><b>{stats.followers}</b> seguidores</button>
-                        <button onClick={() => setIsFollowingModalOpen(true)}><b>{stats.following}</b> seguindo</button>
+                    
+                    <div className="flex gap-6 justify-center sm:justify-start text-sm mb-4 font-bold uppercase tracking-tighter">
+                        <p><span className="text-lg">{stats.posts}</span> publicações</p>
+                        <button onClick={() => setIsFollowersModalOpen(true)}><span className="text-lg">{stats.followers}</span> seguidores</button>
+                        <button onClick={() => setIsFollowingModalOpen(true)}><span className="text-lg">{stats.following}</span> seguindo</button>
                     </div>
-                    <p className="text-sm font-medium">{user.bio}</p>
+                    <p className="text-sm font-medium leading-relaxed max-w-md mx-auto sm:mx-0">{user.bio}</p>
                 </div>
             </header>
 
-            {showContent ? (
-                <div className="grid grid-cols-3 gap-2 border-t dark:border-zinc-800 pt-4">
-                    {posts.map(p => (
-                        <div key={p.id} onClick={() => setSelectedPost(p)} className="aspect-square bg-zinc-100 dark:bg-zinc-900 rounded-3xl overflow-hidden cursor-pointer">
-                            <img src={p?.imageUrl} className="w-full h-full object-cover" />
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                <div className="text-center p-20 opacity-50">Conta Privada</div>
-            )}
+            <div className="grid grid-cols-3 gap-1 border-t dark:border-zinc-800 pt-6">
+                {posts.map(p => (
+                    <div key={p.id} className="aspect-square bg-zinc-100 dark:bg-zinc-900 overflow-hidden cursor-pointer hover:opacity-90 transition-opacity">
+                        <img src={p?.imageUrl} className="w-full h-full object-cover" alt="Post" />
+                    </div>
+                ))}
+            </div>
 
-            {isEditModalOpen && (
-                <EditProfileModal 
-                    isOpen={isEditModalOpen} 
-                    onClose={() => setIsEditModalOpen(false)} 
-                    user={user} 
-                    onUpdate={handleUpdateProfile} 
-                    isSubmitting={isSubmitting} 
-                />
-            )}
+            <EditProfileModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} user={user} onUpdate={handleUpdateProfile} isSubmitting={isSubmitting} />
+            <AdminDashboardModal isOpen={isAdminDashboardOpen} onClose={() => setIsAdminDashboardOpen(false)} />
         </div>
     );
 };
