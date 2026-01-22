@@ -28,7 +28,15 @@ const Feed: React.FC = () => {
   const [posts, setPosts] = useState<any[]>([]);
   const [usersWithPulses, setUsersWithPulses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
+  
+  const [sysConfig, setSysConfig] = useState<any>({
+      appName: 'Néos',
+      enableVibes: true,
+      enablePulses: true,
+      enableBeam: true,
+      enableParadise: true,
+      maintenanceMode: false
+  });
   
   const [globalAlert, setGlobalAlert] = useState<{message: string, id: string} | null>(null);
   const [alertProgress, setAlertProgress] = useState(100);
@@ -50,6 +58,13 @@ const Feed: React.FC = () => {
   const [selectedMedia, setSelectedMedia] = useState<any[]>([]);
 
   const currentUser = auth.currentUser;
+
+  // Listener Configuração do Sistema (Néos Creator)
+  useEffect(() => {
+    return onSnapshot(doc(db, 'system', 'config'), (snap) => {
+        if (snap.exists()) setSysConfig(snap.data());
+    });
+  }, []);
 
   // Listener Alerta Global
   useEffect(() => {
@@ -92,9 +107,9 @@ const Feed: React.FC = () => {
     }
   }, [viewMode, viewingProfileId]);
 
-  // FIX: Listener Pulses Robusto
+  // Listener Pulses
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !sysConfig.enablePulses) return;
     const q = query(collection(db, 'pulses'), orderBy('createdAt', 'desc'), limit(100));
     
     const unsubscribe = onSnapshot(q, async (snap) => {
@@ -127,12 +142,22 @@ const Feed: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [currentUser, sysConfig.enablePulses]);
 
   const handleSelectUser = (id: string) => {
     setViewingProfileId(id);
     setViewMode('profile');
   };
+
+  if (sysConfig.maintenanceMode && currentUser?.email !== 'Matheuslp2755@gmail.com') {
+      return (
+          <div className="h-screen bg-black flex flex-col items-center justify-center p-10 text-center">
+              <h1 className="text-4xl font-black italic text-sky-500 mb-4">{sysConfig.appName}</h1>
+              <p className="text-zinc-500 font-bold uppercase tracking-widest text-xs">Em Manutenção Técnica</p>
+              <p className="text-zinc-700 text-sm mt-8">O dono está ajustando novas funções. Voltamos em breve.</p>
+          </div>
+      );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
@@ -144,7 +169,7 @@ const Feed: React.FC = () => {
                           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
                       </div>
                       <div className="flex-grow">
-                          <h4 className="font-black text-[10px] uppercase tracking-widest mb-0.5 opacity-70">Aviso da Néos</h4>
+                          <h4 className="font-black text-[10px] uppercase tracking-widest mb-0.5 opacity-70">Aviso da {sysConfig.appName}</h4>
                           <p className="text-sm font-bold leading-tight">{globalAlert.message}</p>
                       </div>
                       <button onClick={() => setGlobalAlert(null)} className="p-2 -mr-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
@@ -158,17 +183,19 @@ const Feed: React.FC = () => {
 
       <div className="hidden lg:flex flex-col fixed left-0 top-0 h-screen w-64 border-r dark:border-zinc-800 bg-white dark:bg-black p-6 z-40">
         <div className="mb-10 pt-6">
-            <h1 onClick={() => { setViewMode('feed'); setViewingProfileId(null); }} className="text-6xl font-black italic cursor-pointer bg-gradient-to-br from-indigo-400 via-purple-500 to-pink-500 text-transparent bg-clip-text tracking-tighter">Néos</h1>
+            <h1 onClick={() => { setViewMode('feed'); setViewingProfileId(null); }} className="text-6xl font-black italic cursor-pointer bg-gradient-to-br from-indigo-400 via-purple-500 to-pink-500 text-transparent bg-clip-text tracking-tighter">{sysConfig.appName}</h1>
         </div>
         <nav className="flex flex-col gap-4">
             <button onClick={() => { setViewMode('feed'); setViewingProfileId(null); }} className={`flex items-center gap-4 p-3 rounded-2xl ${viewMode === 'feed' && !viewingProfileId ? 'font-bold bg-zinc-50 dark:bg-zinc-900' : ''}`}>
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M3 12l2-2m0 0l7-7 7-7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
                 <span>{t('header.home')}</span>
             </button>
-            <button onClick={() => setIsParadiseOpen(true)} className="flex items-center gap-4 p-3 rounded-2xl text-sky-500 font-bold hover:bg-sky-50 dark:hover:bg-sky-950/20 transition-all">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812-1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /></svg>
-                <span>Câmera do Paraíso</span>
-            </button>
+            {sysConfig.enableParadise && (
+                <button onClick={() => setIsParadiseOpen(true)} className="flex items-center gap-4 p-3 rounded-2xl text-sky-500 font-bold hover:bg-sky-50 dark:hover:bg-sky-950/20 transition-all">
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812-1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /></svg>
+                    <span>Câmera do Paraíso</span>
+                </button>
+            )}
         </nav>
       </div>
       
@@ -182,11 +209,12 @@ const Feed: React.FC = () => {
            <div className="container mx-auto max-w-4xl py-4"><UserProfile userId={viewingProfileId || currentUser?.uid || ''} onStartMessage={(u) => { setTargetUserForMessages(u); setIsMessagesOpen(true); }} onSelectUser={handleSelectUser} /></div>
          ) : (
           <div className="container mx-auto max-w-lg py-4 pb-24 px-4">
-            <PulseBar usersWithPulses={usersWithPulses} onViewPulses={authorId => {
-                const group = usersWithPulses.find(g => g?.author?.id === authorId);
-                if (group) setViewingPulseGroup(group);
-              }} 
-            />
+            {sysConfig.enablePulses && (
+                <PulseBar usersWithPulses={usersWithPulses} onViewPulses={authorId => {
+                    const group = usersWithPulses.find(g => g?.author?.id === authorId);
+                    if (group) setViewingPulseGroup(group);
+                }} />
+            )}
             <WeatherBanner />
             {loading && <div className="flex justify-center py-10"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-sky-500"></div></div>}
             <div className="flex flex-col gap-4 mt-4">

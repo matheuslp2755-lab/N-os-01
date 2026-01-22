@@ -8,6 +8,7 @@ import FollowersModal from './FollowersModal';
 import OnlineIndicator from '../common/OnlineIndicator';
 import { useLanguage } from '../../context/LanguageContext';
 import AdminDashboardModal from './AdminDashboardModal';
+import NeosCreatorModal from '../admin/NeosCreatorModal';
 
 interface UserProfileProps {
     userId: string;
@@ -28,10 +29,10 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
     const [user, setUser] = useState<any>(null);
     const [posts, setPosts] = useState<any[]>([]);
     const [stats, setStats] = useState({ posts: 0, followers: 0, following: 0 });
-    const [isFollowing, setIsFollowing] = useState(false);
     const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
+    const [isCreatorOpen, setIsCreatorOpen] = useState(false);
     const [isOnline, setIsOnline] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     
@@ -40,7 +41,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
     
     const currentUser = auth.currentUser;
     const isOwner = currentUser?.uid === userId;
-    const isAdmin = currentUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    const isSystemAdmin = currentUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
     
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -68,7 +69,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
         return () => unsub();
     }, [userId]);
 
-    // FIX: Listeners para estatísticas reais
     useEffect(() => {
         const postsQ = query(collection(db, 'posts'), where('userId', '==', userId));
         const unsubPosts = onSnapshot(postsQ, (snap) => {
@@ -155,9 +155,13 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                                 </button>
                                 {isOptionsMenuOpen && (
                                     <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-zinc-900 border dark:border-zinc-800 rounded-2xl shadow-2xl z-[100] py-2 overflow-hidden animate-slide-up">
-                                        {isAdmin && (
+                                        {isSystemAdmin && (
                                             <>
-                                                <button onClick={() => { setIsAdminDashboardOpen(true); setIsOptionsMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold flex items-center gap-3">Painel Néos</button>
+                                                <button onClick={() => { setIsCreatorOpen(true); setIsOptionsMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-indigo-50 dark:hover:bg-indigo-950 font-black text-indigo-500 flex items-center gap-3">
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                                    Editar Rede Social
+                                                </button>
+                                                <button onClick={() => { setIsAdminDashboardOpen(true); setIsOptionsMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold flex items-center gap-3">Central de Denúncias</button>
                                                 <button onClick={async () => { await updateDoc(doc(db, 'users', userId), { isVerified: !user.isVerified }); setIsOptionsMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold text-sky-500">{user.isVerified ? 'Remover Verificado' : 'Dar Verificado'}</button>
                                             </>
                                         )}
@@ -187,6 +191,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
 
             <EditProfileModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} user={user} onUpdate={handleUpdateProfile} isSubmitting={isSubmitting} />
             <AdminDashboardModal isOpen={isAdminDashboardOpen} onClose={() => setIsAdminDashboardOpen(false)} />
+            <NeosCreatorModal isOpen={isCreatorOpen} onClose={() => setIsCreatorOpen(false)} />
             <FollowersModal isOpen={isFollowersModalOpen} onClose={() => setIsFollowersModalOpen(false)} userId={userId} mode="followers" />
             <FollowersModal isOpen={isFollowingModalOpen} onClose={() => setIsFollowingModalOpen(false)} userId={userId} mode="following" />
         </div>
