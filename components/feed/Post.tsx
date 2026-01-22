@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { auth, db, doc, updateDoc, arrayUnion, arrayRemove, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc } from '../../firebase';
+import { auth, db, doc, updateDoc, arrayUnion, arrayRemove, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, setDoc } from '../../firebase';
 import { useLanguage } from '../../context/LanguageContext';
 import { useTimeAgo } from '../../hooks/useTimeAgo';
 import { VerifiedBadge } from '../profile/UserProfile';
@@ -152,19 +152,19 @@ const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse
         await updateDoc(ref, { likes: isLiked ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid) });
     };
 
-    const handleSendAlert = async () => {
+    const handleSendGlobalAlert = async () => {
         if (!currentUser || !isOwnerAdmin) return;
+        const msg = window.prompt("Digite a mensagem geral para enviar a todos os usuários:");
+        if (!msg) return;
+
         setIsMenuOpen(false);
         try {
-            await addDoc(collection(db, 'notifications_in_app'), {
-                recipientId: post.userId,
-                title: 'Alerta Vibrante!',
-                body: `@${currentUser.displayName} enviou um sinal de atenção no seu post.`,
-                type: 'system',
-                read: false,
-                timestamp: serverTimestamp()
+            await setDoc(doc(db, 'system', 'global_alert'), {
+                message: msg,
+                timestamp: serverTimestamp(),
+                id: Date.now().toString()
             });
-            alert("Alerta administrativo enviado!");
+            alert("Comunicado global enviado com sucesso!");
         } catch (e) {
             console.error(e);
         }
@@ -259,7 +259,7 @@ const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse
                             ) : (
                                 <>
                                     {isOwnerAdmin && (
-                                        <button onClick={handleSendAlert} className="w-full text-left px-4 py-3 text-sm text-sky-500 font-black hover:bg-zinc-50 dark:hover:bg-zinc-800">Enviar Alerta Administrativo</button>
+                                        <button onClick={handleSendGlobalAlert} className="w-full text-left px-4 py-3 text-sm text-indigo-500 font-black hover:bg-zinc-50 dark:hover:bg-zinc-800">Enviar Alerta Global</button>
                                     )}
                                     <button onClick={handleReportPost} className="w-full text-left px-4 py-3 text-sm text-red-500 font-bold">Denunciar</button>
                                 </>

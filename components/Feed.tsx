@@ -18,7 +18,7 @@ import WeatherBanner from './feed/WeatherBanner';
 import ParadiseCameraModal from './feed/ParadiseCameraModal';
 import VibeBeamModal from './feed/VibeBeamModal';
 import ForwardModal from './messages/ForwardModal';
-import { auth, db, collection, query, onSnapshot, orderBy, getDocs, where, doc, getDoc, limit, deleteDoc, updateDoc, serverTimestamp } from '../firebase';
+import { auth, db, collection, query, onSnapshot, orderBy, getDocs, where, doc, getDoc, limit, deleteDoc, updateDoc, serverTimestamp, setDoc } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 
 const Feed: React.FC = () => {
@@ -30,8 +30,10 @@ const Feed: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   
-  const [systemAlert, setSystemAlert] = useState<{id: string, title: string, body: string} | null>(null);
+  // ALERTA GLOBAL SISTEMA
+  const [globalAlert, setGlobalAlert] = useState<{message: string, id: string} | null>(null);
   const [alertProgress, setAlertProgress] = useState(100);
+  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
   
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
@@ -53,38 +55,35 @@ const Feed: React.FC = () => {
 
   const currentUser = auth.currentUser;
 
+  // Listener Alerta Global
   useEffect(() => {
-    if (!currentUser) return;
-    const q = query(
-        collection(db, 'notifications_in_app'), 
-        where('recipientId', '==', currentUser.uid),
-        where('read', '==', false),
-        where('type', '==', 'system'),
-        limit(1)
-    );
-
-    const unsub = onSnapshot(q, (snap) => {
-        if (!snap.empty) {
-            const alertData = snap.docs[0].data();
-            const alertId = snap.docs[0].id;
-            setSystemAlert({ id: alertId, title: alertData.title, body: alertData.body });
-            setAlertProgress(100);
-            updateDoc(doc(db, 'notifications_in_app', alertId), { read: true });
+    const unsub = onSnapshot(doc(db, 'system', 'global_alert'), (snap) => {
+        const data = snap.data();
+        if (data && data.message && !dismissedAlerts.includes(data.id)) {
+            // Verifica se o alerta é recente (menos de 1 minuto)
+            const alertTime = data.timestamp?.seconds || 0;
+            const now = Date.now() / 1000;
+            if (now - alertTime < 60) {
+                setGlobalAlert({ message: data.message, id: data.id });
+                setAlertProgress(100);
+            }
         }
     });
     return () => unsub();
-  }, [currentUser]);
+  }, [dismissedAlerts]);
 
+  // Timer para Alerta Global (15 segundos)
   useEffect(() => {
-    if (systemAlert) {
-        const duration = 20000;
+    if (globalAlert) {
+        const duration = 15000;
         const interval = 100;
         const step = (interval / duration) * 100;
+        
         const timer = setInterval(() => {
             setAlertProgress(prev => {
                 if (prev <= 0) {
                     clearInterval(timer);
-                    setSystemAlert(null);
+                    setGlobalAlert(null);
                     return 0;
                 }
                 return prev - step;
@@ -92,7 +91,7 @@ const Feed: React.FC = () => {
         }, interval);
         return () => clearInterval(timer);
     }
-  }, [systemAlert]);
+  }, [globalAlert]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -153,26 +152,33 @@ const Feed: React.FC = () => {
       setIsForwardOpen(true);
   };
 
+  const closeAlert = () => {
+      if (globalAlert) setDismissedAlerts(prev => [...prev, globalAlert.id]);
+      setGlobalAlert(null);
+  };
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      {systemAlert && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1500] w-[95%] max-w-lg animate-slide-down">
-          <div className="bg-indigo-600 text-white p-5 rounded-[2rem] shadow-2xl relative overflow-hidden ring-4 ring-indigo-500/20">
-            <div className="flex items-start gap-4 relative z-10">
-                <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
-                </div>
-                <div className="flex-grow">
-                    <h4 className="font-black text-xs uppercase tracking-widest mb-1 opacity-80">{systemAlert.title}</h4>
-                    <p className="text-sm font-bold leading-tight">{systemAlert.body}</p>
-                </div>
-                <button onClick={() => setSystemAlert(null)} className="p-2 -mt-2 -mr-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-            </div>
-            <div className="absolute bottom-0 left-0 h-1.5 bg-white/30 transition-all duration-100 ease-linear" style={{ width: `${alertProgress}%` }}></div>
+      {/* BANNER ALERTA GLOBAL TEMPORÁRIO */}
+      {globalAlert && (
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[1000] w-[95%] max-w-lg animate-slide-down">
+              <div className="bg-indigo-600 text-white p-5 rounded-[2rem] shadow-2xl relative overflow-hidden ring-4 ring-indigo-500/20">
+                  <div className="flex items-center gap-4 relative z-10">
+                      <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
+                      </div>
+                      <div className="flex-grow">
+                          <h4 className="font-black text-[10px] uppercase tracking-widest mb-0.5 opacity-70">Mensagem da Néos</h4>
+                          <p className="text-sm font-bold leading-tight">{globalAlert.message}</p>
+                      </div>
+                      <button onClick={closeAlert} className="p-2 -mr-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                  </div>
+                  {/* Progress Bar */}
+                  <div className="absolute bottom-0 left-0 h-1 bg-white/30 transition-all duration-100 ease-linear" style={{ width: `${alertProgress}%` }}></div>
+              </div>
           </div>
-        </div>
       )}
 
       <div className="hidden lg:flex flex-col fixed left-0 top-0 h-screen w-64 border-r dark:border-zinc-800 bg-white dark:bg-black p-6 z-40">
