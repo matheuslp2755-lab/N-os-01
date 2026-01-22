@@ -154,7 +154,7 @@ const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse
 
     const handleSendGlobalAlert = async () => {
         if (!currentUser || !isOwnerAdmin) return;
-        const msg = window.prompt("Digite a mensagem geral para enviar a todos os usuários:");
+        const msg = window.prompt("Digite o aviso geral para TODOS os usuários:");
         if (!msg) return;
 
         setIsMenuOpen(false);
@@ -164,7 +164,7 @@ const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse
                 timestamp: serverTimestamp(),
                 id: Date.now().toString()
             });
-            alert("Comunicado global enviado com sucesso!");
+            alert("Aviso global enviado com sucesso!");
         } catch (e) {
             console.error(e);
         }
@@ -259,7 +259,7 @@ const Post: React.FC<PostProps> = ({ post, onPostDeleted, onForward, onViewPulse
                             ) : (
                                 <>
                                     {isOwnerAdmin && (
-                                        <button onClick={handleSendGlobalAlert} className="w-full text-left px-4 py-3 text-sm text-indigo-500 font-black hover:bg-zinc-50 dark:hover:bg-zinc-800">Enviar Alerta Global</button>
+                                        <button onClick={handleSendGlobalAlert} className="w-full text-left px-4 py-3 text-sm text-indigo-500 font-black hover:bg-zinc-50 dark:hover:bg-zinc-800">Comunicado Global</button>
                                     )}
                                     <button onClick={handleReportPost} className="w-full text-left px-4 py-3 text-sm text-red-500 font-bold">Denunciar</button>
                                 </>
