@@ -18,7 +18,6 @@ import WeatherBanner from './feed/WeatherBanner';
 import ParadiseCameraModal from './feed/ParadiseCameraModal';
 import VibeBeamModal from './feed/VibeBeamModal';
 import ForwardModal from './messages/ForwardModal';
-// Added 'where' to imports from '../firebase'
 import { auth, db, collection, query, where, onSnapshot, orderBy, doc, getDoc, limit, deleteDoc, updateDoc, serverTimestamp } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -31,7 +30,6 @@ const Feed: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   
-  // ALERTA GLOBAL SISTEMA
   const [globalAlert, setGlobalAlert] = useState<{message: string, id: string} | null>(null);
   const [alertProgress, setAlertProgress] = useState(100);
   const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
@@ -51,12 +49,11 @@ const Feed: React.FC = () => {
   const [targetUserForMessages, setTargetUserForMessages] = useState<any>(null);
   const [targetConversationId, setTargetConversationId] = useState<string | null>(null);
   const [selectedPostToForward, setSelectedPostToForward] = useState<any>(null);
-  
   const [selectedMedia, setSelectedMedia] = useState<any[]>([]);
 
   const currentUser = auth.currentUser;
 
-  // Listener Alerta Global da Néos
+  // Listener Alerta Global
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'system', 'global_alert'), (snap) => {
         const data = snap.data();
@@ -68,20 +65,15 @@ const Feed: React.FC = () => {
     return () => unsub();
   }, [dismissedAlerts]);
 
-  // Timer para Alerta Global (15 segundos)
+  // Timer Alerta
   useEffect(() => {
     if (globalAlert) {
         const duration = 15000;
         const interval = 100;
         const step = (interval / duration) * 100;
-        
         const timer = setInterval(() => {
             setAlertProgress(prev => {
-                if (prev <= 0) {
-                    clearInterval(timer);
-                    setGlobalAlert(null);
-                    return 0;
-                }
+                if (prev <= 0) { clearInterval(timer); setGlobalAlert(null); return 0; }
                 return prev - step;
             });
         }, interval);
@@ -89,6 +81,7 @@ const Feed: React.FC = () => {
     }
   }, [globalAlert]);
 
+  // Listener Notificações
   useEffect(() => {
     if (!currentUser) return;
     const q = query(collection(db, 'users', currentUser.uid, 'notifications'), where('read', '==', false), limit(1));
@@ -96,6 +89,7 @@ const Feed: React.FC = () => {
     return () => unsub();
   }, [currentUser]);
 
+  // Listener Posts
   useEffect(() => {
     if (viewMode === 'feed' && !viewingProfileId) {
       setLoading(true);
@@ -108,24 +102,37 @@ const Feed: React.FC = () => {
     }
   }, [viewMode, viewingProfileId]);
 
+  // Listener Pulses ( histórias ) - Corrigido para garantir atualização
   useEffect(() => {
     if (!currentUser) return;
-    const fetchPulses = async () => {
-      const q = query(collection(db, 'pulses'), orderBy('createdAt', 'desc'), limit(50));
-      return onSnapshot(q, async (snap) => {
-          const grouped = new Map();
-          for (const d of snap.docs) {
-              const p = d.data();
-              if (!grouped.has(p.authorId)) {
-                  const u = await getDoc(doc(db, 'users', p.authorId));
-                  if (u.exists()) grouped.set(p.authorId, { author: { id: p.authorId, ...u.data() }, pulses: [] });
-              }
-              if (grouped.has(p.authorId)) grouped.get(p.authorId).pulses.push({id: d.id, ...p});
-          }
-          setUsersWithPulses(Array.from(grouped.values()));
-      });
-    };
-    fetchPulses();
+    const q = query(collection(db, 'pulses'), orderBy('createdAt', 'desc'), limit(50));
+    
+    const unsubscribe = onSnapshot(q, async (snap) => {
+        const pulsesMap = new Map<string, any[]>();
+        const authorIds = new Set<string>();
+
+        snap.docs.forEach(d => {
+            const data = d.data();
+            authorIds.add(data.authorId);
+            if (!pulsesMap.has(data.authorId)) pulsesMap.set(data.authorId, []);
+            pulsesMap.get(data.authorId)?.push({ id: d.id, ...data });
+        });
+
+        const groupedArray: any[] = [];
+        for (const authorId of Array.from(authorIds)) {
+            const userRef = doc(db, 'users', authorId);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+                groupedArray.push({
+                    author: { id: authorId, ...userSnap.data() },
+                    pulses: pulsesMap.get(authorId)
+                });
+            }
+        }
+        setUsersWithPulses(groupedArray);
+    });
+
+    return () => unsubscribe();
   }, [currentUser]);
 
   const handleSelectUser = (id: string) => {
@@ -148,14 +155,8 @@ const Feed: React.FC = () => {
       setIsForwardOpen(true);
   };
 
-  const closeAlert = () => {
-      if (globalAlert) setDismissedAlerts(prev => [...prev, globalAlert.id]);
-      setGlobalAlert(null);
-  };
-
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      {/* BANNER ALERTA GLOBAL TEMPORÁRIO */}
       {globalAlert && (
           <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[1000] w-[95%] max-w-lg animate-slide-down">
               <div className="bg-indigo-600 text-white p-5 rounded-[2rem] shadow-2xl relative overflow-hidden ring-4 ring-indigo-500/20">
@@ -167,11 +168,10 @@ const Feed: React.FC = () => {
                           <h4 className="font-black text-[10px] uppercase tracking-widest mb-0.5 opacity-70">Aviso da Néos</h4>
                           <p className="text-sm font-bold leading-tight">{globalAlert.message}</p>
                       </div>
-                      <button onClick={closeAlert} className="p-2 -mr-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
+                      <button onClick={() => setGlobalAlert(null)} className="p-2 -mr-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
                           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M6 18L18 6M6 6l12 12" /></svg>
                       </button>
                   </div>
-                  {/* Progress Bar */}
                   <div className="absolute bottom-0 left-0 h-1 bg-white/30 transition-all duration-100 ease-linear" style={{ width: `${alertProgress}%` }}></div>
               </div>
           </div>
@@ -194,13 +194,7 @@ const Feed: React.FC = () => {
       </div>
       
       <div className={`${viewMode === 'vibes' ? 'hidden' : 'block'} lg:hidden`}>
-        <Header 
-          onSelectUser={handleSelectUser} 
-          onGoHome={() => { setViewMode('feed'); setViewingProfileId(null); }} 
-          onOpenMessages={() => setIsMessagesOpen(true)} 
-          onOpenBrowser={() => setIsBrowserOpen(true)} 
-          hasUnread={hasUnreadNotifications}
-        />
+        <Header onSelectUser={handleSelectUser} onGoHome={() => { setViewMode('feed'); setViewingProfileId(null); }} onOpenMessages={() => setIsMessagesOpen(true)} onOpenBrowser={() => setIsBrowserOpen(true)} hasUnread={hasUnreadNotifications} />
       </div>
 
       <main className={`transition-all duration-300 ${viewMode === 'vibes' ? 'lg:pl-64 h-[calc(100dvh-4rem)] lg:h-auto' : 'lg:pl-64 lg:pr-4 pt-16 lg:pt-8'}`}>
@@ -209,9 +203,7 @@ const Feed: React.FC = () => {
            <div className="container mx-auto max-w-4xl py-4"><UserProfile userId={viewingProfileId || currentUser?.uid || ''} onStartMessage={(u) => { setTargetUserForMessages(u); setIsMessagesOpen(true); }} onSelectUser={handleSelectUser} /></div>
          ) : (
           <div className="container mx-auto max-w-lg py-4 pb-24 px-4">
-            <PulseBar 
-              usersWithPulses={usersWithPulses} 
-              onViewPulses={authorId => {
+            <PulseBar usersWithPulses={usersWithPulses} onViewPulses={authorId => {
                 const group = usersWithPulses.find(g => g?.author?.id === authorId);
                 if (group) setViewingPulseGroup(group);
               }} 
@@ -244,13 +236,7 @@ const Feed: React.FC = () => {
       )}
       
       <GalleryModal isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} onImagesSelected={(imgs) => { setSelectedMedia(imgs); setIsGalleryOpen(false); setIsCreatePostOpen(true); }} />
-      <CreatePostModal 
-        isOpen={isCreatePostOpen} 
-        onClose={() => setIsCreatePostOpen(false)} 
-        onPostCreated={() => setIsCreatePostOpen(false)} 
-        initialImages={selectedMedia} 
-      />
-      
+      <CreatePostModal isOpen={isCreatePostOpen} onClose={() => setIsCreatePostOpen(false)} onPostCreated={() => setIsCreatePostOpen(false)} initialImages={selectedMedia} />
       <CreatePulseModal isOpen={isCreatePulseOpen} onClose={() => setIsCreatePulseOpen(false)} onPulseCreated={() => setIsCreatePulseOpen(false)} />
       <CreateVibeModal isOpen={isCreateVibeOpen} onClose={() => setIsCreateVibeOpen(false)} onVibeCreated={() => setIsCreateVibeOpen(false)} />
       {isBrowserOpen && <VibeBrowser onClose={() => setIsBrowserOpen(false)} />}
