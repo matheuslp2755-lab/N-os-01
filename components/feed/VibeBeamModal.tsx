@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { auth, db, doc, serverTimestamp, collection, query, where, getDocs, setDoc, deleteDoc, storage, storageRef, uploadBytes, getDownloadURL, addDoc, updateDoc, limit, onSnapshot } from '../../firebase';
 import { useLanguage } from '../../context/LanguageContext';
@@ -11,12 +12,16 @@ interface VibeBeamModalProps {
 const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose }) => {
     const { t } = useLanguage();
     const [mode, setMode] = useState<'selection' | 'sending' | 'receiving'>('selection');
-    const [status, setStatus] = useState<'idle' | 'searching' | 'beaming' | 'success'>('idle');
+    const [status, setStatus] = useState<'idle' | 'searching' | 'beaming' | 'success' | 'incoming' | 'preview'>('idle');
     const [nearbyReceivers, setNearbyReceivers] = useState<any[]>([]);
     const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
     const [photoPreview, setPhotoPreview] = useState<string | null>(null);
     const [isSending, setIsSending] = useState(false);
     
+    // Dados para o Receptor
+    const [incomingData, setIncomingData] = useState<any>(null);
+    const [receivedPhotoUrl, setReceivedPhotoUrl] = useState<string | null>(null);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const radarInterval = useRef<number | null>(null);
     const currentUser = auth.currentUser;
@@ -29,6 +34,8 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose }) => {
         setNearbyReceivers([]);
         setSelectedPhoto(null);
         setPhotoPreview(null);
+        setReceivedPhotoUrl(null);
+        setIncomingData(null);
         setStatus('idle');
         setMode('selection');
         setIsSending(false);
@@ -38,9 +45,9 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose }) => {
         if (!isOpen) cleanup();
     }, [isOpen]);
 
-    // Lógica para quem quer RECEBER
+    // LISTENER PARA O RECEPTOR (Usuário A)
     useEffect(() => {
-        if (mode === 'receiving' && currentUser) {
+        if (mode === 'receiving' && currentUser && isOpen) {
             const updatePresence = async () => {
                 navigator.geolocation.getCurrentPosition(async (pos) => {
                     await updateDoc(doc(db, 'users', currentUser.uid), {
@@ -50,14 +57,40 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose }) => {
                     });
                 });
             };
+            
             updatePresence();
-            const interval = setInterval(updatePresence, 10000);
+            const presenceInterval = setInterval(updatePresence, 10000);
+
+            // Escuta sinais de transferência direcionados a mim
+            const q = query(
+                collection(db, 'beams_transfers'),
+                where('targetUserId', '==', currentUser.uid),
+                limit(1)
+            );
+
+            const unsubTransfer = onSnapshot(q, (snap) => {
+                if (!snap.empty) {
+                    const data = snap.docs[0].data();
+                    setIncomingData({ ...data, transferId: snap.docs[0].id });
+                    setStatus('incoming');
+                    
+                    // Simula progresso da transferência por 2.5s
+                    setTimeout(() => {
+                        setReceivedPhotoUrl(data.mediaUrl);
+                        setStatus('preview');
+                        // Deleta o sinal para limpar
+                        deleteDoc(doc(db, 'beams_transfers', snap.docs[0].id));
+                    }, 3000);
+                }
+            });
+
             return () => {
-                clearInterval(interval);
+                clearInterval(presenceInterval);
+                unsubTransfer();
                 updateDoc(doc(db, 'users', currentUser.uid), { beamStatus: 'idle' });
             };
         }
-    }, [mode, currentUser]);
+    }, [mode, currentUser, isOpen]);
 
     const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -112,10 +145,21 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose }) => {
 
         try {
             const path = `beams/${currentUser.uid}/${Date.now()}_${selectedPhoto.name}`;
-            const ref = storageRef(storage, path);
-            await uploadBytes(ref, selectedPhoto);
-            const url = await getDownloadURL(ref);
+            const fileRef = storageRef(storage, path);
+            await uploadBytes(fileRef, selectedPhoto);
+            const url = await getDownloadURL(fileRef);
 
+            // 1. Criar sinal de transferência para o Receptor (Usuário A)
+            await addDoc(collection(db, 'beams_transfers'), {
+                senderId: currentUser.uid,
+                senderName: currentUser.displayName,
+                senderAvatar: currentUser.photoURL,
+                targetUserId: targetUser.userId,
+                mediaUrl: url,
+                timestamp: serverTimestamp()
+            });
+
+            // 2. Salvar na conversa (Histórico)
             const conversationId = [currentUser.uid, targetUser.userId].sort().join('_');
             const conversationRef = doc(db, 'conversations', conversationId);
             
@@ -141,9 +185,18 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose }) => {
             setTimeout(onClose, 2000);
         } catch (e) {
             setStatus('idle');
+            console.error(e);
         } finally {
             setIsSending(false);
         }
+    };
+
+    const handleDownload = () => {
+        if (!receivedPhotoUrl) return;
+        const link = document.createElement('a');
+        link.href = receivedPhotoUrl;
+        link.download = `neos-beam-${Date.now()}.jpg`;
+        link.click();
     };
 
     if (!isOpen) return null;
@@ -154,6 +207,7 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose }) => {
 
             <div className="w-full max-w-sm flex flex-col items-center text-center gap-8">
                 
+                {/* MODO SELEÇÃO INICIAL */}
                 {mode === 'selection' && (
                     <div className="space-y-12 animate-slide-up w-full">
                         <div className="space-y-2">
@@ -184,7 +238,8 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose }) => {
                     </div>
                 )}
 
-                {mode === 'receiving' && (
+                {/* MODO RECEPTOR: AGUARDANDO SINAL (USUÁRIO A) */}
+                {mode === 'receiving' && status === 'idle' && (
                     <div className="space-y-10 animate-fade-in">
                         <div className="relative w-48 h-48 mx-auto">
                             <div className="absolute inset-0 border-4 border-sky-500/30 rounded-full animate-ping"></div>
@@ -201,6 +256,51 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose }) => {
                     </div>
                 )}
 
+                {/* MODO RECEPTOR: RECEBENDO (USUÁRIO A SENDO ALVO) */}
+                {status === 'incoming' && incomingData && (
+                    <div className="space-y-10 animate-slide-up w-full">
+                        <div className="relative w-32 h-32 mx-auto">
+                            <img src={incomingData.senderAvatar} className="w-full h-full rounded-full border-4 border-sky-500 shadow-2xl object-cover" />
+                            <div className="absolute -bottom-2 -right-2 bg-sky-500 p-2 rounded-full shadow-lg">
+                                <svg className="w-4 h-4 text-white animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+                            </div>
+                        </div>
+                        <div className="space-y-4">
+                            <h3 className="text-xl font-black text-white uppercase tracking-tighter italic">
+                                @{incomingData.senderName} está te enviando uma foto via Néos Beam
+                            </h3>
+                            <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                                <div className="bg-sky-500 h-full animate-beam-progress shadow-[0_0_15px_#0ea5e9]"></div>
+                            </div>
+                            <p className="text-[10px] font-black text-sky-500 uppercase tracking-widest animate-pulse">Sincronizando frequências...</p>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODO RECEPTOR: PREVIEW FINAL (USUÁRIO A RECEBEU) */}
+                {status === 'preview' && receivedPhotoUrl && (
+                    <div className="space-y-8 animate-fade-in w-full">
+                        <div className="relative w-full aspect-[3/4] bg-zinc-900 rounded-[3rem] overflow-hidden shadow-2xl border border-white/10 group">
+                            <img src={receivedPhotoUrl} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+                            <div className="absolute bottom-6 left-0 right-0 flex justify-center">
+                                <span className="text-[9px] font-black text-white/50 uppercase tracking-[0.4em]">Recebido via Néos Beam</span>
+                            </div>
+                        </div>
+                        
+                        <div className="flex flex-col gap-3 w-full">
+                            <Button 
+                                onClick={handleDownload}
+                                className="!py-5 !rounded-[2rem] !bg-white !text-black !font-black !uppercase !tracking-widest shadow-xl active:scale-95 transition-all"
+                            >
+                                Salvar na Galeria
+                            </Button>
+                            <button onClick={cleanup} className="py-4 text-zinc-500 font-bold uppercase text-[10px] tracking-widest hover:text-white transition-colors">Fechar</button>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODO REMETENTE: ESCOLHA DA FOTO (USUÁRIO B) */}
                 {mode === 'sending' && status === 'idle' && (
                     <div className="space-y-10 animate-slide-up w-full">
                         <div 
@@ -228,6 +328,7 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose }) => {
                     </div>
                 )}
 
+                {/* MODO REMETENTE: BUSCANDO SINAIS (USUÁRIO B) */}
                 {status === 'searching' && (
                     <div className="w-full space-y-8 animate-fade-in">
                         <div className="relative w-48 h-48 mx-auto">
@@ -289,6 +390,8 @@ const VibeBeamModal: React.FC<VibeBeamModalProps> = ({ isOpen, onClose }) => {
                 .animate-slide-up { animation: slide-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
                 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
                 .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
+                @keyframes beam-progress { 0% { width: 0%; } 100% { width: 100%; } }
+                .animate-beam-progress { animation: beam-progress 3s linear forwards; }
             `}</style>
         </div>
     );
