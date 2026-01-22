@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '../../../context/LanguageContext';
 import Button from '../../common/Button';
@@ -14,21 +15,15 @@ interface GalleryModalProps {
   onImagesSelected: (images: GalleryImage[]) => void;
 }
 
-/**
- * PIPELINE DE CONVERSÃO E NORMALIZAÇÃO NÉOS
- * Converte HEIC para JPEG e normaliza via Canvas para garantir renderização universal.
- */
 const processImagePipeline = async (file: File): Promise<GalleryImage> => {
     let sourceFile: File | Blob = file;
 
-    // 1. Detectar e Converter HEIC (iPhone)
     if (file.type === "image/heic" || file.type === "image/heif" || file.name.toLowerCase().endsWith(".heic")) {
-        console.log("Néos Pipeline: Convertendo HEIC para JPEG...");
         try {
             const converted = await heic2any({
                 blob: file,
                 toType: "image/jpeg",
-                quality: 0.8
+                quality: 0.98
             });
             const blob = Array.isArray(converted) ? converted[0] : converted;
             sourceFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: "image/jpeg" });
@@ -37,33 +32,21 @@ const processImagePipeline = async (file: File): Promise<GalleryImage> => {
         }
     }
 
-    // 2. Normalização via Canvas (Garante que a imagem seja renderizável e cria Blob URL estável)
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => {
             const img = new Image();
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                const maxDim = 1280;
-                let width = img.width;
-                let height = img.height;
-
-                if (width > maxDim || height > maxDim) {
-                    if (width > height) {
-                        height *= maxDim / width;
-                        width = maxDim;
-                    } else {
-                        width *= maxDim / height;
-                        height = maxDim;
-                    }
-                }
-
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
+                // REMOVIDO QUALQUER LIMITE DE DIMENSÃO (RESOLUÇÃO REAL DO SENSOR)
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d', { alpha: false });
                 if (!ctx) return reject('Erro de contexto canvas');
                 
-                ctx.drawImage(img, 0, 0, width, height);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, img.width, img.height);
                 
                 canvas.toBlob((blob) => {
                     if (blob) {
@@ -72,7 +55,7 @@ const processImagePipeline = async (file: File): Promise<GalleryImage> => {
                     } else {
                         reject('Falha ao gerar blob final');
                     }
-                }, 'image/jpeg', 0.85);
+                }, 'image/jpeg', 1.0); // QUALIDADE 100%
             };
             img.onerror = () => reject('Erro ao carregar imagem no canvas');
             img.src = e.target?.result as string;
@@ -97,7 +80,6 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
 
     useEffect(() => {
         if (!isOpen) {
-            // Limpa recursos mas não os selecionados que foram enviados ao Feed
             galleryImages.forEach(img => {
                 const isSelected = selectedImages.some(s => s.preview === img.preview);
                 if (!isSelected && img.preview.startsWith('blob:')) {
@@ -122,9 +104,15 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
     const startCamera = async () => {
         stopCamera();
         try {
+            // QUALIDADE ULTRA HD NATIVA
             const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: facingMode, width: { ideal: 1080 }, height: { ideal: 1080 } } 
+                video: { 
+                    facingMode: facingMode, 
+                    width: { ideal: 4096 }, 
+                    height: { ideal: 2160 } 
+                } 
             });
+            cameraStream && stopCamera();
             setCameraStream(stream);
             if (videoRef.current) videoRef.current.srcObject = stream;
         } catch (err) { console.error("Câmera indisponível", err); }
@@ -140,7 +128,6 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
             setIsProcessing(true);
             const files = Array.from(e.target.files);
             try {
-                // Fix: Explicitly casting each file in the array to File to avoid TypeScript errors
                 const processed = await Promise.all(files.map(file => processImagePipeline(file as File)));
                 setGalleryImages(prev => [...processed, ...prev]);
                 if (selectedImages.length === 0) setSelectedImages([processed[0]]);
@@ -157,10 +144,13 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
         const canvas = canvasRef.current;
         if (!video || !canvas || video.readyState < 2) return;
         
+        // RESOLUÇÃO REAL DO SENSOR
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { alpha: false });
         if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
             ctx.save();
             if (facingMode === 'user') { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -173,7 +163,7 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
                     setSelectedImages(prev => prev.length < 20 ? [...prev, newImage] : prev);
                     setActiveTab('gallery');
                 }
-            }, 'image/jpeg', 0.9);
+            }, 'image/jpeg', 1.0);
         }
     };
 
@@ -186,7 +176,7 @@ const GalleryModal: React.FC<GalleryModalProps> = ({ isOpen, onClose, onImagesSe
                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
                 <h2 className="text-sm font-black uppercase tracking-widest">
-                    {isProcessing ? 'Processando...' : `${t('gallery.title')} (${selectedImages.length}/20)`}
+                    {isProcessing ? 'Capturando HD...' : `${t('gallery.title')} (${selectedImages.length}/20)`}
                 </h2>
                 <Button onClick={() => onImagesSelected(selectedImages)} disabled={selectedImages.length === 0 || isProcessing} className="!w-auto !py-1.5 !px-5 !text-[10px] font-black !rounded-full">
                     {t('gallery.next')}

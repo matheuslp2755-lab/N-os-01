@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { auth, db, storage, addDoc, collection, serverTimestamp, storageRef, getDownloadURL, uploadBytes } from '../../firebase';
 import { useLanguage } from '../../context/LanguageContext';
@@ -33,7 +34,7 @@ const processPulseImage = async (file: File): Promise<{ file: Blob, preview: str
 
     if (file.type === "image/heic" || file.type === "image/heif" || file.name.toLowerCase().endsWith(".heic")) {
         try {
-            const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.8 });
+            const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.95 });
             finalFile = Array.isArray(converted) ? converted[0] : converted;
         } catch (e) { console.warn("HEIC failure", e); }
     }
@@ -44,31 +45,18 @@ const processPulseImage = async (file: File): Promise<{ file: Blob, preview: str
             const img = new Image();
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
-                const maxDim = 1080;
-
-                if (width > maxDim || height > maxDim) {
-                    if (width > height) {
-                        height *= maxDim / width;
-                        width = maxDim;
-                    } else {
-                        width *= maxDim / height;
-                        height = maxDim;
-                    }
-                }
-
-                canvas.width = width;
-                canvas.height = height;
+                // USA RESOLUÇÃO REAL DA IMAGEM
+                canvas.width = img.width;
+                canvas.height = img.height;
                 const ctx = canvas.getContext('2d');
                 if (!ctx) return reject('ctx null');
-                ctx.drawImage(img, 0, 0, width, height);
+                ctx.drawImage(img, 0, 0, img.width, img.height);
                 canvas.toBlob((blob) => {
                     if (blob) {
                         const preview = URL.createObjectURL(blob);
                         resolve({ file: blob, preview });
                     } else reject('blob null');
-                }, 'image/jpeg', 0.85);
+                }, 'image/jpeg', 0.98);
             };
             img.onerror = reject;
             img.src = e.target?.result as string;
@@ -102,19 +90,6 @@ const CreatePulseModal: React.FC<CreatePulseModalProps> = ({ isOpen, onClose, on
     const videoPreviewRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
-    const fetchWeather = () => {
-        if ("geolocation" in navigator) {
-            navigator.geolocation.getCurrentPosition(async (pos) => {
-                try {
-                    const { latitude, longitude } = pos.coords;
-                    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`);
-                    const data = await res.json();
-                    if (data.current_weather) setWeather({ temp: Math.round(data.current_weather.temperature), code: data.current_weather.weathercode });
-                } catch (e) {}
-            });
-        }
-    };
-
     const stopCamera = () => {
         if (cameraStream) {
             cameraStream.getTracks().forEach(t => t.stop());
@@ -126,7 +101,11 @@ const CreatePulseModal: React.FC<CreatePulseModalProps> = ({ isOpen, onClose, on
         stopCamera();
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+                video: { 
+                    facingMode: facingMode, 
+                    width: { ideal: 3840 }, 
+                    height: { ideal: 2160 } 
+                },
                 audio: false 
             });
             setCameraStream(stream);
@@ -140,7 +119,6 @@ const CreatePulseModal: React.FC<CreatePulseModalProps> = ({ isOpen, onClose, on
     }, [isUsingCamera, isOpen, facingMode]);
 
     useEffect(() => {
-        if (isOpen) fetchWeather();
         if (!isOpen) { 
             if (mediaPreview && mediaPreview.startsWith('blob:')) URL.revokeObjectURL(mediaPreview);
             setMediaFile(null); setMediaPreview(null); setError(''); setIsUsingCamera(false); setSelectedMusic(null); setHideMusicCover(false); setStickerPos({ x: 50, y: 50 }); setIsProcessing(false);
@@ -152,7 +130,6 @@ const CreatePulseModal: React.FC<CreatePulseModalProps> = ({ isOpen, onClose, on
         if (!file) return;
 
         setError('');
-        setIsDragging(false);
         setIsProcessing(true);
         
         try {
@@ -176,7 +153,11 @@ const CreatePulseModal: React.FC<CreatePulseModalProps> = ({ isOpen, onClose, on
         const video = videoPreviewRef.current;
         const canvas = canvasRef.current;
         if (!video || !canvas || video.readyState < 2) return;
-        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        
+        // USA RESOLUÇÃO NATIVA
+        canvas.width = video.videoWidth; 
+        canvas.height = video.videoHeight;
+        
         const ctx = canvas.getContext('2d', { alpha: false });
         if (ctx) {
             ctx.save();
@@ -190,7 +171,7 @@ const CreatePulseModal: React.FC<CreatePulseModalProps> = ({ isOpen, onClose, on
                     setMediaPreview(preview); 
                     setIsUsingCamera(false); 
                 }
-            }, 'image/jpeg', 0.9);
+            }, 'image/jpeg', 0.98);
         }
     };
 
@@ -207,7 +188,7 @@ const CreatePulseModal: React.FC<CreatePulseModalProps> = ({ isOpen, onClose, on
         if (!mediaFile || submitting) return;
         setSubmitting(true);
         try {
-            const fileName = `pulse-${Date.now()}.jpg`;
+            const fileName = `pulse-pro-${Date.now()}.jpg`;
             const path = `pulses/${auth.currentUser?.uid}/${fileName}`;
             const ref = storageRef(storage, path);
             await uploadBytes(ref, mediaFile, { contentType: mediaFile.type || 'image/jpeg' });
@@ -235,11 +216,6 @@ const CreatePulseModal: React.FC<CreatePulseModalProps> = ({ isOpen, onClose, on
                     {mediaPreview && (
                         <>
                             <button onClick={() => setIsMusicModalOpen(true)} className="p-2 rounded-full bg-black/20 backdrop-blur-md border border-white/20 text-white"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg></button>
-                            {selectedMusic && (
-                                <button onClick={() => setHideMusicCover(!hideMusicCover)} className={`p-2 rounded-full backdrop-blur-md border border-white/20 transition-colors ${hideMusicCover ? 'bg-sky-500 text-white' : 'bg-black/20 text-white'}`}>
-                                    {hideMusicCover ? <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" /></svg> : <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
-                                </button>
-                            )}
                         </>
                     )}
                     {mediaPreview && (
@@ -269,12 +245,6 @@ const CreatePulseModal: React.FC<CreatePulseModalProps> = ({ isOpen, onClose, on
                     <div className="w-full h-full flex items-center justify-center relative overflow-hidden">
                         <img src={mediaPreview} className="w-full h-full object-contain" style={{ filter: FILTERS[filterIndex].filter }} />
                         
-                        {weather && (
-                            <div className="absolute top-24 left-6 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 flex items-center gap-2">
-                                <span className="text-[10px] font-black text-white uppercase">{weather.code <= 3 ? '☀️' : '🌧️'} {weather.temp}°C</span>
-                            </div>
-                        )}
-
                         {selectedMusic && !hideMusicCover && (
                             <div 
                                 className="absolute z-50 cursor-grab active:cursor-grabbing p-4"
@@ -299,7 +269,7 @@ const CreatePulseModal: React.FC<CreatePulseModalProps> = ({ isOpen, onClose, on
                     <div className="flex flex-col gap-10 text-center text-white">
                         <div className="flex gap-8">
                             <div onClick={() => setIsUsingCamera(true)} className="flex flex-col items-center cursor-pointer">
-                                <div className="w-20 h-20 rounded-[2rem] bg-zinc-900 border-2 border-dashed border-white/20 flex items-center justify-center hover:border-white transition-all"><svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /></svg></div>
+                                <div className="w-20 h-20 rounded-[2rem] bg-zinc-900 border-2 border-dashed border-white/20 flex items-center justify-center hover:border-white transition-all"><svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812-1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /></svg></div>
                                 <p className="text-[10px] font-black uppercase mt-2">Câmera</p>
                             </div>
                             <div onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center cursor-pointer">

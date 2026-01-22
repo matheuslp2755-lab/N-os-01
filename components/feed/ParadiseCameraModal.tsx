@@ -42,7 +42,7 @@ const PRESETS: Preset[] = [
 const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClose }) => {
     const [activePreset, setActivePreset] = useState<Preset>(PRESETS[0]);
     const [zoom, setZoom] = useState(1);
-    const [exposure, setExposure] = useState(1); // Brilho (1 = normal)
+    const [exposure, setExposure] = useState(1); 
     const [aspectRatio, setAspectRatio] = useState<'3:4' | '1:1' | '9:16' | 'full'>('3:4');
     const [flash, setFlash] = useState(false);
     const [timer, setTimer] = useState(0); 
@@ -53,7 +53,6 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const [showGallery, setShowGallery] = useState(false);
     const [galleryIdx, setGalleryIdx] = useState(0);
     const [focusUI, setFocusUI] = useState<{ x: number, y: number } | null>(null);
-    const [isAdjustingExposure, setIsAdjustingExposure] = useState(false);
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -62,8 +61,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     const startCamera = useCallback(async () => {
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
         try {
+            // SOLICITA QUALIDADE MÁXIMA REAL (4K SE DISPONÍVEL)
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode, width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 60 } }
+                video: { 
+                    facingMode, 
+                    width: { ideal: 4096 }, 
+                    height: { ideal: 2160 }, 
+                    frameRate: { ideal: 60 } 
+                }
             });
             streamRef.current = stream;
             if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
@@ -77,14 +82,9 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
     const handleFocusAndExposure = (e: React.MouseEvent<HTMLDivElement>) => {
         if (!videoRef.current) return;
-        const rect = videoRef.current.getBoundingClientRect();
         const x = e.clientX;
         const y = e.clientY;
-        
         setFocusUI({ x, y });
-        setExposure(1); // Reseta brilho ao trocar foco
-        
-        // Timeout para sumir interface de foco
         setTimeout(() => setFocusUI(null), 3500);
     };
 
@@ -94,19 +94,20 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
     };
 
     const applyPostProcessing = (ctx: CanvasRenderingContext2D, width: number, height: number, preset: Preset) => {
-        // Aplica o brilho personalizado do usuário
+        // Brilho customizado
         ctx.save();
         ctx.globalCompositeOperation = 'source-over';
         ctx.filter = `brightness(${exposure})`;
         ctx.drawImage(ctx.canvas, 0, 0);
         ctx.restore();
 
-        // Grão
+        // Grão (Escalado para a resolução real da foto)
+        const grainSize = Math.max(256, Math.floor(width / 4));
         const grainCanvas = document.createElement('canvas');
-        grainCanvas.width = 256; grainCanvas.height = 256;
+        grainCanvas.width = grainSize; grainCanvas.height = grainSize;
         const gCtx = grainCanvas.getContext('2d');
         if (gCtx) {
-            const gData = gCtx.createImageData(256, 256);
+            const gData = gCtx.createImageData(grainSize, grainSize);
             for (let i = 0; i < gData.data.length; i += 4) {
                 const val = Math.random() * 255;
                 gData.data[i] = val; gData.data[i+1] = val; gData.data[i+2] = val; gData.data[i+3] = 255;
@@ -120,26 +121,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.restore();
         }
 
-        if (preset.isDazz) {
-            ctx.save();
-            ctx.globalCompositeOperation = 'soft-light';
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-            ctx.fillRect(0, 0, width, height);
-            ctx.restore();
-            const dazzFlash = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, Math.max(width, height) * 0.9);
-            dazzFlash.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
-            dazzFlash.addColorStop(1, 'rgba(0, 0, 0, 0.1)');
-            ctx.fillStyle = dazzFlash;
-            ctx.fillRect(0, 0, width, height);
-        }
-
-        // Marca d'água
+        // Marca d'água (Proporcional à resolução real)
         ctx.save();
-        ctx.font = `bold ${Math.floor(width * 0.05)}px sans-serif`;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        const fontSize = Math.floor(width * 0.04);
+        ctx.font = `black ${fontSize}px sans-serif`;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.textAlign = 'right';
-        ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 12;
-        ctx.fillText("NÉOS", width * 0.95, height * 0.94);
+        ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = width * 0.01;
+        ctx.fillText("NÉOS PRO", width * 0.96, height * 0.95);
         ctx.restore();
     };
 
@@ -150,11 +139,12 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
 
         const ctx = canvas.getContext('2d', { alpha: false });
         if (ctx) {
+            // USA A RESOLUÇÃO REAL DA CÂMERA SEM DOWNSCALING
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
 
-            // Aplica preset + exposição do usuário
             ctx.filter = `${activePreset.filterCSS} brightness(${exposure})`;
             ctx.save();
             if (facingMode === 'user') { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
@@ -163,11 +153,11 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             ctx.filter = 'none';
 
             applyPostProcessing(ctx, canvas.width, canvas.height, activePreset);
-            setCapturedMedia(prev => [canvas.toDataURL('image/jpeg', 0.92), ...prev]);
+            // QUALIDADE MÁXIMA NO TO_DATA_URL
+            setCapturedMedia(prev => [canvas.toDataURL('image/jpeg', 0.98), ...prev]);
         }
     };
 
-    // Fix: Added handleCaptureClick to handle timer logic before executing the actual capture.
     const handleCaptureClick = () => {
         if (timer > 0) {
             let count = timer;
@@ -196,7 +186,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                     <header className="p-6 flex justify-between items-center bg-black/40 backdrop-blur-xl border-b border-white/10 z-10">
                         <button onClick={() => setShowGallery(false)} className="p-2 bg-white/10 rounded-full"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M15 19l-7-7 7-7" /></svg></button>
                         <span className="text-[10px] font-black uppercase tracking-[0.3em]">Galeria Paradise ({galleryIdx + 1}/{capturedMedia.length})</span>
-                        <button onClick={() => { const link = document.createElement('a'); link.href = capturedMedia[galleryIdx]; link.download = `neos-p-${Date.now()}.jpg`; link.click(); }} className="p-2 bg-sky-500 rounded-full shadow-lg"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg></button>
+                        <button onClick={() => { const link = document.createElement('a'); link.href = capturedMedia[galleryIdx]; link.download = `neos-pro-${Date.now()}.jpg`; link.click(); }} className="p-2 bg-sky-500 rounded-full shadow-lg"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg></button>
                     </header>
                     <div className="flex-grow flex items-center justify-center relative overflow-hidden">
                         <div className="absolute inset-0 flex items-center justify-between px-4 z-10">
@@ -214,19 +204,14 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                     
                     {focusUI && (
                         <div className="absolute z-50 pointer-events-none" style={{ left: focusUI.x - 35, top: focusUI.y - 35 }}>
-                            {/* Círculo de Foco */}
                             <div className="w-[70px] h-[70px] border-2 border-purple-500 rounded-full animate-pulse shadow-[0_0_15px_rgba(168,85,247,0.5)] flex items-center justify-center">
                                 <div className="w-1 h-1 bg-purple-500 rounded-full"></div>
                             </div>
-                            {/* Controle de Brilho Lateral */}
                             <div className="absolute left-[85px] top-0 h-[70px] flex items-center pointer-events-auto">
                                 <div className="relative h-full flex flex-col items-center">
                                     <div className="w-[2px] h-full bg-white/40 rounded-full"></div>
                                     <input 
-                                        type="range" 
-                                        min="0.4" 
-                                        max="1.8" 
-                                        step="0.05"
+                                        type="range" min="0.4" max="1.8" step="0.05"
                                         value={exposure}
                                         onChange={handleExposureChange}
                                         onClick={e => e.stopPropagation()}
@@ -245,14 +230,9 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
                     <div className="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between">
                          <div className="flex justify-between items-start opacity-60">
                              <div className="text-[10px] font-mono leading-tight uppercase">{activePreset.name}<br/>AF_Active<br/>Grain_{activePreset.grain * 100}%</div>
-                             <div className="text-[10px] font-mono text-right leading-tight uppercase">ISO_Auto<br/>EXP_{exposure.toFixed(2)}<br/>60FPS</div>
+                             <div className="text-[10px] font-mono text-right leading-tight uppercase">RAW_QUALITY<br/>EXP_{exposure.toFixed(2)}<br/>ULTRA_HD</div>
                          </div>
                          {countdown && <div className="absolute inset-0 flex items-center justify-center"><span className="text-9xl font-black italic text-[#FFC83D] animate-bounce">{countdown}</span></div>}
-                         <div className="flex flex-col items-center gap-1 mb-8">
-                             <div className="flex gap-4 bg-black/50 backdrop-blur-xl px-4 py-2 rounded-full border border-white/10 pointer-events-auto">
-                                 {[1, 1.5, 2, 4].map(z => (<button key={z} onClick={(e) => { e.stopPropagation(); setZoom(z); }} className={`text-[10px] font-black w-8 h-8 rounded-full transition-all ${zoom === z ? 'bg-white text-black' : 'text-white/40'}`}>{z}x</button>))}
-                             </div>
-                         </div>
                     </div>
                 </div>
             </div>
@@ -279,7 +259,7 @@ const ParadiseCameraModal: React.FC<ParadiseCameraModalProps> = ({ isOpen, onClo
             <footer className="bg-black pt-4 pb-12 px-8 flex items-center justify-between">
                 <button onClick={(e) => { e.stopPropagation(); capturedMedia.length > 0 && setShowGallery(true); }} className="w-14 h-14 rounded-2xl bg-zinc-900 border border-white/10 overflow-hidden shadow-2xl transition-all active:scale-95">{capturedMedia.length > 0 && <img src={capturedMedia[0]} className="w-full h-full object-cover animate-fade-in" />}</button>
                 <button onClick={(e) => { e.stopPropagation(); if (countdown === null) handleCaptureClick(); }} className="w-24 h-24 rounded-full border-[6px] border-white/20 p-2 flex items-center justify-center active:scale-90 transition-all group"><div className="w-full h-full rounded-full bg-white shadow-inner"></div></button>
-                <button className="w-14 h-14 rounded-full bg-zinc-900 border border-white/10 flex items-center justify-center text-white/50 active:scale-95 transition-all"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></button>
+                <div className="w-14" />
             </footer>
             <canvas ref={canvasRef} className="hidden" />
         </div>
