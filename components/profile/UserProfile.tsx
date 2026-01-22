@@ -1,14 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { auth, db, doc, getDoc, collection, getDocs, deleteDoc, serverTimestamp, updateDoc, onSnapshot, query, where, writeBatch, addDoc, storage, storageRef, uploadBytes, getDownloadURL } from '../../firebase';
-import { signOut, updateProfile } from 'firebase/auth';
+import { auth, db, doc, getDoc, collection, getDocs, deleteDoc, serverTimestamp, updateDoc, onSnapshot, query, where, writeBatch, addDoc, setDoc } from '../../firebase';
+import { signOut } from 'firebase/auth';
 import Button from '../common/Button';
 import EditProfileModal from './EditProfileModal';
 import FollowersModal from './FollowersModal';
 import OnlineIndicator from '../common/OnlineIndicator';
 import { useLanguage } from '../../context/LanguageContext';
 import Post from '../feed/Post';
-import VibeBeamModal from '../feed/VibeBeamModal';
 import AdminDashboardModal from './AdminDashboardModal';
 
 interface UserProfileProps {
@@ -35,9 +34,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
     const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
-    const [isBeamOpen, setIsBeamOpen] = useState(false);
     const [isOnline, setIsOnline] = useState(false);
-    const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
     const [isAdminActionLoading, setIsAdminActionLoading] = useState(false);
     
     const [selectedPost, setSelectedPost] = useState<any>(null);
@@ -53,6 +50,8 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
     useEffect(() => {
         let unsubscribePosts: (() => void) | undefined;
         let unsubscribeUser: (() => void) | undefined;
+        let unsubscribeFollow: (() => void) | undefined;
+        let unsubscribeRequest: (() => void) | undefined;
 
         const fetchUserData = async () => {
             const userRef = doc(db, 'users', userId);
@@ -66,9 +65,16 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                 }
             });
 
-            if (currentUser) {
-                const followSnap = await getDoc(doc(db, 'users', currentUser.uid, 'following', userId));
-                setIsFollowing(followSnap.exists());
+            if (currentUser && !isOwner) {
+                // Monitorar se sigo este usuário
+                unsubscribeFollow = onSnapshot(doc(db, 'users', currentUser.uid, 'following', userId), (doc) => {
+                    setIsFollowing(doc.exists());
+                });
+
+                // Monitorar se solicitei seguir (para contas privadas)
+                unsubscribeRequest = onSnapshot(doc(db, 'users', currentUser.uid, 'sentFollowRequests', userId), (doc) => {
+                    setIsRequested(doc.exists());
+                });
             }
 
             const postsQ = query(collection(db, 'posts'), where('userId', '==', userId));
@@ -77,9 +83,18 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                 setStats(prev => ({ ...prev, posts: snap.size }));
             });
 
-            const fers = await getDocs(collection(db, 'users', userId, 'followers'));
-            const fing = await getDocs(collection(db, 'users', userId, 'following'));
-            setStats(prev => ({ ...prev, followers: fers.size, following: fing.size }));
+            // Listeners para contagem de seguidores/seguindo
+            const unsubFollowers = onSnapshot(collection(db, 'users', userId, 'followers'), (snap) => {
+                setStats(prev => ({ ...prev, followers: snap.size }));
+            });
+            const unsubFollowing = onSnapshot(collection(db, 'users', userId, 'following'), (snap) => {
+                setStats(prev => ({ ...prev, following: snap.size }));
+            });
+
+            return () => {
+                unsubFollowers();
+                unsubFollowing();
+            };
         };
         fetchUserData();
 
@@ -92,9 +107,83 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
         return () => {
             if (unsubscribePosts) unsubscribePosts();
             if (unsubscribeUser) unsubscribeUser();
+            if (unsubscribeFollow) unsubscribeFollow();
+            if (unsubscribeRequest) unsubscribeRequest();
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [userId, currentUser]);
+    }, [userId, currentUser, isOwner]);
+
+    const handleFollow = async () => {
+        if (!currentUser || !user) return;
+
+        if (isFollowing) {
+            // Unfollow
+            const batch = writeBatch(db);
+            batch.delete(doc(db, 'users', currentUser.uid, 'following', userId));
+            batch.delete(doc(db, 'users', userId, 'followers', currentUser.uid));
+            await batch.commit();
+            return;
+        }
+
+        if (isRequested) {
+            // Cancelar solicitação
+            const batch = writeBatch(db);
+            batch.delete(doc(db, 'users', currentUser.uid, 'sentFollowRequests', userId));
+            batch.delete(doc(db, 'users', userId, 'followRequests', currentUser.uid));
+            await batch.commit();
+            return;
+        }
+
+        if (user.isPrivate) {
+            // Enviar Solicitação
+            const batch = writeBatch(db);
+            batch.set(doc(db, 'users', currentUser.uid, 'sentFollowRequests', userId), {
+                username: user.username,
+                avatar: user.avatar,
+                timestamp: serverTimestamp()
+            });
+            batch.set(doc(db, 'users', userId, 'followRequests', currentUser.uid), {
+                username: currentUser.displayName,
+                avatar: currentUser.photoURL,
+                timestamp: serverTimestamp()
+            });
+            // Criar Notificação no Coração
+            const notifRef = doc(collection(db, 'users', userId, 'notifications'));
+            batch.set(notifRef, {
+                type: 'follow_request',
+                fromUserId: currentUser.uid,
+                fromUsername: currentUser.displayName,
+                fromUserAvatar: currentUser.photoURL,
+                read: false,
+                timestamp: serverTimestamp()
+            });
+            await batch.commit();
+        } else {
+            // Seguir direto (Conta Pública)
+            const batch = writeBatch(db);
+            batch.set(doc(db, 'users', currentUser.uid, 'following', userId), {
+                username: user.username,
+                avatar: user.avatar,
+                timestamp: serverTimestamp()
+            });
+            batch.set(doc(db, 'users', userId, 'followers', currentUser.uid), {
+                username: currentUser.displayName,
+                avatar: currentUser.photoURL,
+                timestamp: serverTimestamp()
+            });
+            // Notificação simples de "começou a te seguir"
+            const notifRef = doc(collection(db, 'users', userId, 'notifications'));
+            batch.set(notifRef, {
+                type: 'follow',
+                fromUserId: currentUser.uid,
+                fromUsername: currentUser.displayName,
+                fromUserAvatar: currentUser.photoURL,
+                read: false,
+                timestamp: serverTimestamp()
+            });
+            await batch.commit();
+        }
+    };
 
     const handleAdminToggleVerify = async () => {
         if (!isAdmin) return;
@@ -124,43 +213,9 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
         } catch (e) { console.error(e); } finally { setIsAdminActionLoading(false); }
     };
 
-    const handleSendSystemAlert = async (isGlobal: boolean) => {
-        if (!isAdmin || isAdminActionLoading) return;
-        const message = window.prompt(isGlobal ? "MENSAGEM PARA TODOS OS USUÁRIOS (Feed):" : `MENSAGEM PARA @${user.username} (Feed):`);
-        if (!message || !message.trim()) return;
-
-        setIsAdminActionLoading(true);
-        try {
-            if (isGlobal) {
-                const usersSnap = await getDocs(collection(db, 'users'));
-                const batch = writeBatch(db);
-                usersSnap.docs.forEach(uDoc => {
-                    const alertRef = doc(collection(db, 'notifications_in_app'));
-                    batch.set(alertRef, {
-                        recipientId: uDoc.id,
-                        title: "Aviso da Néos",
-                        body: message,
-                        type: 'system',
-                        read: false,
-                        timestamp: serverTimestamp()
-                    });
-                });
-                await batch.commit();
-            } else {
-                await addDoc(collection(db, 'notifications_in_app'), {
-                    recipientId: userId,
-                    title: "Mensagem do Admin",
-                    body: message,
-                    type: 'system',
-                    read: false,
-                    timestamp: serverTimestamp()
-                });
-            }
-            setIsOptionsMenuOpen(false);
-        } catch (e) { console.error(e); } finally { setIsAdminActionLoading(false); }
-    };
-
     if (!user) return <div className="p-8 text-center">{t('messages.loading')}</div>;
+
+    const showContent = !user.isPrivate || isFollowing || isOwner;
 
     return (
         <div className="container mx-auto max-w-4xl p-4 sm:p-8">
@@ -190,10 +245,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                                         {isOptionsMenuOpen && (
                                             <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-zinc-950 border dark:border-zinc-800 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden">
                                                 {isAdmin && (
-                                                    <>
-                                                        <button onClick={() => handleSendSystemAlert(true)} className="w-full text-left px-4 py-3 text-sm text-indigo-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 border-b dark:border-zinc-800">Alerta Global</button>
-                                                        <button onClick={() => setIsAdminDashboardOpen(true)} className="w-full text-left px-4 py-3 text-sm text-sky-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800">Painel Néos</button>
-                                                    </>
+                                                    <button onClick={() => setIsAdminDashboardOpen(true)} className="w-full text-left px-4 py-3 text-sm text-sky-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800">Painel Néos</button>
                                                 )}
                                                 <button onClick={() => signOut(auth)} className="w-full text-left px-4 py-3 text-sm font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800">{t('profile.logout')}</button>
                                             </div>
@@ -202,7 +254,12 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-2">
-                                    <Button className="!w-auto">Seguir</Button>
+                                    <Button 
+                                        onClick={handleFollow}
+                                        className={`!w-auto !px-8 ${isFollowing || isRequested ? '!bg-zinc-200 !text-black dark:!bg-zinc-800 dark:!text-white' : '!bg-sky-500 !text-white'}`}
+                                    >
+                                        {isFollowing ? t('header.following') : isRequested ? t('header.requested') : user.isPrivate ? 'Enviar Solicitação' : t('header.follow')}
+                                    </Button>
                                     <Button onClick={() => onStartMessage(user)} className="!w-auto !bg-zinc-200 dark:!bg-zinc-700 !text-black dark:!text-white">Mensagem</Button>
                                     <div className="relative" ref={optionsMenuRef}>
                                         <button onClick={() => setIsOptionsMenuOpen(!isOptionsMenuOpen)} className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white border dark:border-zinc-700">
@@ -215,7 +272,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                                                         <button onClick={handleAdminToggleVerify} className="w-full text-left px-4 py-3 text-sm text-sky-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 border-b dark:border-zinc-800">
                                                             {user.isVerified ? "Remover Verificado" : "Dar Verificado"}
                                                         </button>
-                                                        <button onClick={() => handleSendSystemAlert(false)} className="w-full text-left px-4 py-3 text-sm text-indigo-500 font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 border-b dark:border-zinc-800">Enviar Alerta</button>
                                                         <button onClick={handleAdminBanUser} className="w-full text-left px-4 py-3 text-sm text-red-500 font-black hover:bg-red-50 dark:hover:bg-red-950/20">Banir Usuário</button>
                                                     </>
                                                 )}
@@ -236,13 +292,23 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                 </div>
             </header>
 
-            <div className="grid grid-cols-3 gap-2 border-t dark:border-zinc-800 pt-4">
-                {posts.map(p => (
-                    <div key={p.id} onClick={() => setSelectedPost(p)} className="aspect-square bg-zinc-100 dark:bg-zinc-900 rounded-3xl overflow-hidden cursor-pointer">
-                        <img src={p?.imageUrl || p?.media?.[0]?.url} className="w-full h-full object-cover" />
+            {showContent ? (
+                <div className="grid grid-cols-3 gap-2 border-t dark:border-zinc-800 pt-4">
+                    {posts.map(p => (
+                        <div key={p.id} onClick={() => setSelectedPost(p)} className="aspect-square bg-zinc-100 dark:bg-zinc-900 rounded-3xl overflow-hidden cursor-pointer">
+                            <img src={p?.imageUrl || p?.media?.[0]?.url} className="w-full h-full object-cover" />
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="border-t dark:border-zinc-800 pt-20 text-center flex flex-col items-center gap-4 opacity-50">
+                    <div className="w-20 h-20 rounded-full border-4 border-zinc-300 flex items-center justify-center">
+                        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                     </div>
-                ))}
-            </div>
+                    <h3 className="font-black text-xl uppercase tracking-tighter">{t('profile.privateAccountMessage')}</h3>
+                    <p className="text-sm font-medium">{t('profile.privateAccountSuggestion')}</p>
+                </div>
+            )}
 
             {selectedPost && (
                 <div className="fixed inset-0 bg-black/95 z-[200] flex flex-col items-center justify-center p-0 md:p-10" onClick={() => setSelectedPost(null)}>
