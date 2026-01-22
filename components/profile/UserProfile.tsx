@@ -1,13 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { auth, db, doc, getDoc, collection, getDocs, deleteDoc, serverTimestamp, updateDoc, onSnapshot, query, where, writeBatch, addDoc, setDoc, storage, storageRef, uploadBytes, getDownloadURL } from '../../firebase';
+import { auth, db, doc, getDoc, collection, deleteDoc, serverTimestamp, updateDoc, onSnapshot, query, where, writeBatch, addDoc, setDoc, storage, storageRef, uploadBytes, getDownloadURL } from '../../firebase';
 import { signOut } from 'firebase/auth';
 import Button from '../common/Button';
 import EditProfileModal from './EditProfileModal';
 import FollowersModal from './FollowersModal';
 import OnlineIndicator from '../common/OnlineIndicator';
 import { useLanguage } from '../../context/LanguageContext';
-import Post from '../feed/Post';
 import AdminDashboardModal from './AdminDashboardModal';
 
 interface UserProfileProps {
@@ -36,7 +35,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
     const [isOnline, setIsOnline] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     
-    const [selectedPost, setSelectedPost] = useState<any>(null);
     const [isFollowersModalOpen, setIsFollowersModalOpen] = useState(false);
     const [isFollowingModalOpen, setIsFollowingModalOpen] = useState(false);
     
@@ -57,9 +55,8 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
     }, []);
 
     useEffect(() => {
-        let unsubscribeUser: (() => void) | undefined;
         const userRef = doc(db, 'users', userId);
-        unsubscribeUser = onSnapshot(userRef, (doc) => {
+        const unsub = onSnapshot(userRef, (doc) => {
             if (doc.exists()) {
                 const userData = doc.data();
                 setUser(userData);
@@ -68,16 +65,28 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                 setIsOnline(!!isUserOnline);
             }
         });
-        return () => unsubscribeUser?.();
+        return () => unsub();
     }, [userId]);
 
+    // FIX: Listeners para estatísticas reais
     useEffect(() => {
         const postsQ = query(collection(db, 'posts'), where('userId', '==', userId));
-        const unsub = onSnapshot(postsQ, (snap) => {
+        const unsubPosts = onSnapshot(postsQ, (snap) => {
             setPosts(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
             setStats(prev => ({ ...prev, posts: snap.size }));
         });
-        return () => unsub();
+
+        const followersQ = collection(db, 'users', userId, 'followers');
+        const unsubFollowers = onSnapshot(followersQ, (snap) => {
+            setStats(prev => ({ ...prev, followers: snap.size }));
+        });
+
+        const followingQ = collection(db, 'users', userId, 'following');
+        const unsubFollowing = onSnapshot(followingQ, (snap) => {
+            setStats(prev => ({ ...prev, following: snap.size }));
+        });
+
+        return () => { unsubPosts(); unsubFollowers(); unsubFollowing(); };
     }, [userId]);
 
     const handleUpdateProfile = async (updatedData: any) => {
@@ -103,74 +112,8 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
         } catch (e) { alert("Erro ao salvar."); } finally { setIsSubmitting(false); }
     };
 
-    // FUNÇÕES DE ADMINISTRADOR (EXCLUSIVAS MATHEUS)
-    const adminBanUser = async () => {
-        if (!isAdmin) return;
-        const msg = window.prompt("Digite o MOTIVO do banimento (o usuário verá esta mensagem):");
-        if (!msg) return;
-        try {
-            await updateDoc(doc(db, 'users', userId), {
-                isBanned: true,
-                banReason: msg,
-                username: `BANIDO_${user.username}`
-            });
-            await addDoc(collection(db, 'notifications_in_app'), {
-                recipientId: userId,
-                title: 'CONTA SUSPENSA',
-                body: `Sua conta foi banida pelo administrador. Motivo: ${msg}`,
-                type: 'system',
-                read: false,
-                timestamp: serverTimestamp()
-            });
-            alert("Usuário banido com sucesso.");
-            setIsOptionsMenuOpen(false);
-        } catch (e) { console.error(e); }
-    };
-
-    const adminToggleVerify = async () => {
-        if (!isAdmin) return;
-        try {
-            await updateDoc(doc(db, 'users', userId), { isVerified: !user.isVerified });
-            setIsOptionsMenuOpen(false);
-        } catch (e) { console.error(e); }
-    };
-
-    const adminSendAlert = async () => {
-        if (!isAdmin) return;
-        const msg = window.prompt(`Enviar alerta direto para @${user.username}:`);
-        if (!msg) return;
-        try {
-            await addDoc(collection(db, 'notifications_in_app'), {
-                recipientId: userId,
-                title: 'Alerta da Néos',
-                body: msg,
-                type: 'system',
-                read: false,
-                timestamp: serverTimestamp()
-            });
-            alert("Alerta enviado.");
-            setIsOptionsMenuOpen(false);
-        } catch (e) { console.error(e); }
-    };
-
-    const adminGlobalAlert = async () => {
-        if (!isAdmin) return;
-        const msg = window.prompt("Digite o comunicado GLOBAL (todos os usuários verão por 15s):");
-        if (!msg) return;
-        try {
-            await setDoc(doc(db, 'system', 'global_alert'), {
-                message: msg,
-                timestamp: serverTimestamp(),
-                id: Date.now().toString()
-            });
-            alert("Comunicado Global enviado!");
-            setIsOptionsMenuOpen(false);
-        } catch (e) { console.error(e); }
-    };
-
     const handleFollow = async () => {
         if (!currentUser || !user) return;
-        // Lógica de seguir simplificada para o exemplo
         const batch = writeBatch(db);
         batch.set(doc(db, 'users', currentUser.uid, 'following', userId), { username: user.username, avatar: user.avatar, timestamp: serverTimestamp() });
         batch.set(doc(db, 'users', userId, 'followers', currentUser.uid), { username: currentUser.displayName, avatar: currentUser.photoURL, timestamp: serverTimestamp() });
@@ -206,44 +149,19 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                                 </>
                             )}
                             
-                            {/* BOTÃO 3 PONTINHOS */}
                             <div className="relative" ref={menuRef}>
-                                <button 
-                                    onClick={() => setIsOptionsMenuOpen(!isOptionsMenuOpen)}
-                                    className="p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white border dark:border-zinc-700 hover:bg-zinc-200 transition-colors"
-                                >
+                                <button onClick={() => setIsOptionsMenuOpen(!isOptionsMenuOpen)} className="p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white border dark:border-zinc-700 hover:bg-zinc-200 transition-colors">
                                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.5"></circle><circle cx="6" cy="12" r="1.5"></circle><circle cx="18" cy="12" r="1.5"></circle></svg>
                                 </button>
-
                                 {isOptionsMenuOpen && (
                                     <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-zinc-900 border dark:border-zinc-800 rounded-2xl shadow-2xl z-[100] py-2 overflow-hidden animate-slide-up">
                                         {isAdmin && (
-                                            <div className="px-4 py-2 border-b dark:border-zinc-800 mb-1">
-                                                <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Néos Command Center</span>
-                                            </div>
-                                        )}
-                                        
-                                        {isAdmin && (
                                             <>
-                                                <button onClick={() => { setIsAdminDashboardOpen(true); setIsOptionsMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold flex items-center gap-3">
-                                                    <span className="w-2 h-2 bg-indigo-500 rounded-full"></span> Painel Néos
-                                                </button>
-                                                <button onClick={adminToggleVerify} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold text-sky-500">
-                                                    {user.isVerified ? 'Remover Verificado' : 'Dar Verificado'}
-                                                </button>
-                                                <button onClick={adminSendAlert} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold">Enviar Alerta Direto</button>
-                                                <button onClick={adminGlobalAlert} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold text-amber-500">Comunicado Global</button>
-                                                <button onClick={adminBanUser} className="w-full text-left px-4 py-3 text-sm text-red-500 font-black border-t dark:border-zinc-800 mt-1">BANIR USUÁRIO</button>
+                                                <button onClick={() => { setIsAdminDashboardOpen(true); setIsOptionsMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold flex items-center gap-3">Painel Néos</button>
+                                                <button onClick={async () => { await updateDoc(doc(db, 'users', userId), { isVerified: !user.isVerified }); setIsOptionsMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 font-bold text-sky-500">{user.isVerified ? 'Remover Verificado' : 'Dar Verificado'}</button>
                                             </>
                                         )}
-
-                                        {!isAdmin && isOwner && (
-                                            <button onClick={() => signOut(auth)} className="w-full text-left px-4 py-3 text-sm text-red-500 font-bold">Sair da Conta</button>
-                                        )}
-                                        
-                                        {!isAdmin && !isOwner && (
-                                            <button className="w-full text-left px-4 py-3 text-sm text-red-500 font-bold">Denunciar Perfil</button>
-                                        )}
+                                        {isOwner && <button onClick={() => signOut(auth)} className="w-full text-left px-4 py-3 text-sm text-red-500 font-bold">Sair da Conta</button>}
                                     </div>
                                 )}
                             </div>
@@ -252,8 +170,8 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
                     
                     <div className="flex gap-6 justify-center sm:justify-start text-sm mb-4 font-bold uppercase tracking-tighter">
                         <p><span className="text-lg">{stats.posts}</span> publicações</p>
-                        <button onClick={() => setIsFollowersModalOpen(true)}><span className="text-lg">{stats.followers}</span> seguidores</button>
-                        <button onClick={() => setIsFollowingModalOpen(true)}><span className="text-lg">{stats.following}</span> seguindo</button>
+                        <button onClick={() => setIsFollowersModalOpen(true)} className="hover:text-sky-500 transition-colors"><span className="text-lg">{stats.followers}</span> seguidores</button>
+                        <button onClick={() => setIsFollowingModalOpen(true)} className="hover:text-sky-500 transition-colors"><span className="text-lg">{stats.following}</span> seguindo</button>
                     </div>
                     <p className="text-sm font-medium leading-relaxed max-w-md mx-auto sm:mx-0">{user.bio}</p>
                 </div>
@@ -269,6 +187,8 @@ const UserProfile: React.FC<UserProfileProps> = ({ userId, onStartMessage, onSel
 
             <EditProfileModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} user={user} onUpdate={handleUpdateProfile} isSubmitting={isSubmitting} />
             <AdminDashboardModal isOpen={isAdminDashboardOpen} onClose={() => setIsAdminDashboardOpen(false)} />
+            <FollowersModal isOpen={isFollowersModalOpen} onClose={() => setIsFollowersModalOpen(false)} userId={userId} mode="followers" />
+            <FollowersModal isOpen={isFollowingModalOpen} onClose={() => setIsFollowingModalOpen(false)} userId={userId} mode="following" />
         </div>
     );
 };

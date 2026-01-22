@@ -32,7 +32,6 @@ const Feed: React.FC = () => {
   
   const [globalAlert, setGlobalAlert] = useState<{message: string, id: string} | null>(null);
   const [alertProgress, setAlertProgress] = useState(100);
-  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
   
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
@@ -47,7 +46,6 @@ const Feed: React.FC = () => {
   
   const [viewingPulseGroup, setViewingPulseGroup] = useState<any | null>(null);
   const [targetUserForMessages, setTargetUserForMessages] = useState<any>(null);
-  const [targetConversationId, setTargetConversationId] = useState<string | null>(null);
   const [selectedPostToForward, setSelectedPostToForward] = useState<any>(null);
   const [selectedMedia, setSelectedMedia] = useState<any[]>([]);
 
@@ -57,13 +55,13 @@ const Feed: React.FC = () => {
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'system', 'global_alert'), (snap) => {
         const data = snap.data();
-        if (data && data.message && !dismissedAlerts.includes(data.id)) {
-            setGlobalAlert({ message: data.message, id: data.id });
+        if (data && data.message) {
+            setGlobalAlert({ message: data.message, id: data.id || '1' });
             setAlertProgress(100);
         }
     });
     return () => unsub();
-  }, [dismissedAlerts]);
+  }, []);
 
   // Timer Alerta
   useEffect(() => {
@@ -81,14 +79,6 @@ const Feed: React.FC = () => {
     }
   }, [globalAlert]);
 
-  // Listener Notificações
-  useEffect(() => {
-    if (!currentUser) return;
-    const q = query(collection(db, 'users', currentUser.uid, 'notifications'), where('read', '==', false), limit(1));
-    const unsub = onSnapshot(q, (snap) => setHasUnreadNotifications(!snap.empty));
-    return () => unsub();
-  }, [currentUser]);
-
   // Listener Posts
   useEffect(() => {
     if (viewMode === 'feed' && !viewingProfileId) {
@@ -102,10 +92,10 @@ const Feed: React.FC = () => {
     }
   }, [viewMode, viewingProfileId]);
 
-  // Listener Pulses ( histórias ) - Corrigido para garantir atualização
+  // FIX: Listener Pulses Robusto
   useEffect(() => {
     if (!currentUser) return;
-    const q = query(collection(db, 'pulses'), orderBy('createdAt', 'desc'), limit(50));
+    const q = query(collection(db, 'pulses'), orderBy('createdAt', 'desc'), limit(100));
     
     const unsubscribe = onSnapshot(q, async (snap) => {
         const pulsesMap = new Map<string, any[]>();
@@ -113,21 +103,25 @@ const Feed: React.FC = () => {
 
         snap.docs.forEach(d => {
             const data = d.data();
+            if (!data.authorId) return;
             authorIds.add(data.authorId);
             if (!pulsesMap.has(data.authorId)) pulsesMap.set(data.authorId, []);
             pulsesMap.get(data.authorId)?.push({ id: d.id, ...data });
         });
 
         const groupedArray: any[] = [];
-        for (const authorId of Array.from(authorIds)) {
-            const userRef = doc(db, 'users', authorId);
-            const userSnap = await getDoc(userRef);
-            if (userSnap.exists()) {
-                groupedArray.push({
-                    author: { id: authorId, ...userSnap.data() },
-                    pulses: pulsesMap.get(authorId)
-                });
-            }
+        const authorsToFetch = Array.from(authorIds);
+        
+        for (const authorId of authorsToFetch) {
+            try {
+                const userSnap = await getDoc(doc(db, 'users', authorId));
+                if (userSnap.exists()) {
+                    groupedArray.push({
+                        author: { id: authorId, ...userSnap.data() },
+                        pulses: pulsesMap.get(authorId)
+                    });
+                }
+            } catch (e) { console.error("Erro autor pulse:", e); }
         }
         setUsersWithPulses(groupedArray);
     });
@@ -138,21 +132,6 @@ const Feed: React.FC = () => {
   const handleSelectUser = (id: string) => {
     setViewingProfileId(id);
     setViewMode('profile');
-  };
-
-  const handleMenuSelect = (type: 'post' | 'pulse' | 'vibe' | 'paradise' | 'beam') => {
-    switch (type) {
-        case 'post': setIsGalleryOpen(true); break;
-        case 'pulse': setIsCreatePulseOpen(true); break;
-        case 'vibe': setIsCreateVibeOpen(true); break;
-        case 'paradise': setIsParadiseOpen(true); break;
-        case 'beam': setIsBeamOpen(true); break;
-    }
-  };
-
-  const handleForwardPost = (post: any) => {
-      setSelectedPostToForward(post);
-      setIsForwardOpen(true);
   };
 
   return (
@@ -194,7 +173,7 @@ const Feed: React.FC = () => {
       </div>
       
       <div className={`${viewMode === 'vibes' ? 'hidden' : 'block'} lg:hidden`}>
-        <Header onSelectUser={handleSelectUser} onGoHome={() => { setViewMode('feed'); setViewingProfileId(null); }} onOpenMessages={() => setIsMessagesOpen(true)} onOpenBrowser={() => setIsBrowserOpen(true)} hasUnread={hasUnreadNotifications} />
+        <Header onSelectUser={handleSelectUser} onGoHome={() => { setViewMode('feed'); setViewingProfileId(null); }} onOpenMessages={() => setIsMessagesOpen(true)} onOpenBrowser={() => setIsBrowserOpen(true)} />
       </div>
 
       <main className={`transition-all duration-300 ${viewMode === 'vibes' ? 'lg:pl-64 h-[calc(100dvh-4rem)] lg:h-auto' : 'lg:pl-64 lg:pr-4 pt-16 lg:pt-8'}`}>
@@ -211,9 +190,9 @@ const Feed: React.FC = () => {
             <WeatherBanner />
             {loading && <div className="flex justify-center py-10"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-sky-500"></div></div>}
             <div className="flex flex-col gap-4 mt-4">
-                {posts.length > 0 ? posts.map(p => (
-                    <Post key={p.id} post={p} onPostDeleted={(id) => deleteDoc(doc(db, 'posts', id))} onForward={handleForwardPost} />
-                )) : !loading && <div className="text-center py-20 text-zinc-500 font-bold uppercase text-xs tracking-widest">{t('feed.empty')}</div>}
+                {posts.map(p => (
+                    <Post key={p.id} post={p} onPostDeleted={(id) => deleteDoc(doc(db, 'posts', id))} />
+                ))}
             </div>
           </div>
         )}
@@ -221,8 +200,14 @@ const Feed: React.FC = () => {
 
       <div className="lg:hidden"><BottomNav currentView={viewingProfileId ? 'profile' : viewMode} onChangeView={v => { setViewMode(v); setViewingProfileId(null); }} onCreateClick={() => setIsMenuOpen(true)} /></div>
 
-      <CreateMenuModal isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onSelect={handleMenuSelect as any} />
-      <MessagesModal isOpen={isMessagesOpen} onClose={() => setIsMessagesOpen(false)} initialTargetUser={targetUserForMessages} initialConversationId={targetConversationId} />
+      <CreateMenuModal isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onSelect={(type) => {
+          if (type === 'post') setIsGalleryOpen(true);
+          if (type === 'pulse') setIsCreatePulseOpen(true);
+          if (type === 'vibe') setIsCreateVibeOpen(true);
+          if (type === 'paradise') setIsParadiseOpen(true);
+          if (type === 'beam') setIsBeamOpen(true);
+      }} />
+      <MessagesModal isOpen={isMessagesOpen} onClose={() => setIsMessagesOpen(false)} initialTargetUser={targetUserForMessages} initialConversationId={null} />
       {viewingPulseGroup && (
           <PulseViewerModal 
             isOpen={!!viewingPulseGroup} 
@@ -243,11 +228,6 @@ const Feed: React.FC = () => {
       <ParadiseCameraModal isOpen={isParadiseOpen} onClose={() => setIsParadiseOpen(false)} />
       <VibeBeamModal isOpen={isBeamOpen} onClose={() => setIsBeamOpen(false)} />
       <ForwardModal isOpen={isForwardOpen} onClose={() => setIsForwardOpen(false)} post={selectedPostToForward} />
-
-      <style>{`
-        @keyframes slide-down { from { transform: translate(-50%, -100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
-        .animate-slide-down { animation: slide-down 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-      `}</style>
     </div>
   );
 };
